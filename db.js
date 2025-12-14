@@ -494,5 +494,159 @@ class InventoryDB {
     }
 }
 
-// Create global database instance
+// ==================== FILE SYNC ====================
+
+class FileSync {
+    constructor(database) {
+        this.db = database;
+        this.fileHandle = null;
+        this.syncEnabled = false;
+        this.lastSyncTime = null;
+    }
+
+    /**
+     * Check if File System Access API is supported
+     */
+    isSupported() {
+        return 'showSaveFilePicker' in window;
+    }
+
+    /**
+     * Enable auto-sync by selecting a file location
+     */
+    async enableSync() {
+        if (!this.isSupported()) {
+            throw new Error('File System Access API not supported in this browser. Use Chrome or Edge.');
+        }
+
+        try {
+            this.fileHandle = await window.showSaveFilePicker({
+                suggestedName: 'box-inventory.json',
+                types: [{
+                    description: 'JSON Files',
+                    accept: { 'application/json': ['.json'] }
+                }]
+            });
+            this.syncEnabled = true;
+            await this.syncNow();
+            return true;
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                return false; // User cancelled
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * Sync data to the file now
+     */
+    async syncNow() {
+        if (!this.syncEnabled || !this.fileHandle) {
+            return false;
+        }
+
+        try {
+            const data = await this.db.exportForMCP();
+            const json = JSON.stringify(data, null, 2);
+
+            const writable = await this.fileHandle.createWritable();
+            await writable.write(json);
+            await writable.close();
+
+            this.lastSyncTime = new Date();
+            return true;
+        } catch (err) {
+            console.error('Sync failed:', err);
+            // Permission might have been revoked
+            if (err.name === 'NotAllowedError') {
+                this.syncEnabled = false;
+                this.fileHandle = null;
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Get sync status
+     */
+    getStatus() {
+        return {
+            enabled: this.syncEnabled,
+            supported: this.isSupported(),
+            lastSync: this.lastSyncTime
+        };
+    }
+
+    /**
+     * Disable sync
+     */
+    disableSync() {
+        this.syncEnabled = false;
+        this.fileHandle = null;
+        this.lastSyncTime = null;
+    }
+}
+
+// Add MCP export method to InventoryDB
+InventoryDB.prototype.exportForMCP = async function() {
+    const [items, containers] = await Promise.all([
+        this.getAllItems(),
+        this.getAllContainers()
+    ]);
+
+    // Create a container lookup map
+    const containerMap = {};
+    containers.forEach(c => {
+        containerMap[c.id] = c;
+    });
+
+    // Create MCP-optimized export
+    return {
+        lastUpdated: new Date().toISOString(),
+        version: '1.0',
+        stats: {
+            totalItems: items.length,
+            totalContainers: containers.length
+        },
+        containers: containers.map(c => ({
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            location: c.location,
+            description: c.description || '',
+            itemCount: items.filter(i => i.containerId === c.id).length
+        })),
+        items: items.map(item => {
+            const container = containerMap[item.containerId];
+            return {
+                id: item.id,
+                name: item.name,
+                description: item.description || '',
+                containerName: container ? container.name : null,
+                containerType: container ? container.type : null,
+                location: container ? container.location : null,
+                fullLocation: container
+                    ? `${container.name} (${container.type}) - ${container.location}`
+                    : 'Unknown location',
+                hasPhoto: !!item.photo,
+                photoData: item.photo || null, // Include for MCP image viewing
+                dateAdded: item.dateAdded,
+                dateModified: item.dateModified
+            };
+        }),
+        // Plain text inventory for easy AI reading
+        textInventory: items.map(item => {
+            const container = containerMap[item.containerId];
+            const loc = container
+                ? `in "${container.name}" (${container.type}) at ${container.location}`
+                : 'location unknown';
+            const desc = item.description ? ` - ${item.description}` : '';
+            return `${item.name}${desc}: ${loc}`;
+        })
+    };
+};
+
+// Create global instances
 const db = new InventoryDB();
+const fileSync = new FileSync(db);

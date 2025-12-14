@@ -130,6 +130,20 @@ function initEventListeners() {
 
     elements.importFile.addEventListener('change', handleImport);
 
+    // Claude Sync
+    const syncBtn = document.getElementById('syncBtn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            elements.menu.classList.add('hidden');
+            if (fileSync.syncEnabled) {
+                disableClaudeSync();
+            } else {
+                enableClaudeSync();
+            }
+        });
+    }
+
     // Search
     elements.searchInput.addEventListener('input', handleSearch);
     elements.searchInput.addEventListener('focus', () => {
@@ -221,6 +235,50 @@ async function refreshData() {
         renderContainers(),
         populateContainerSelect()
     ]);
+
+    // Auto-sync to file if enabled
+    if (fileSync.syncEnabled) {
+        await fileSync.syncNow();
+        updateSyncStatus();
+    }
+}
+
+// ==================== FILE SYNC ====================
+
+async function enableClaudeSync() {
+    try {
+        const success = await fileSync.enableSync();
+        if (success) {
+            showToast('Claude sync enabled! File will update automatically.', 'success');
+            updateSyncStatus();
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+function disableClaudeSync() {
+    fileSync.disableSync();
+    showToast('Claude sync disabled', 'success');
+    updateSyncStatus();
+}
+
+function updateSyncStatus() {
+    const status = fileSync.getStatus();
+    const syncBtn = document.getElementById('syncBtn');
+    const syncStatus = document.getElementById('syncStatus');
+
+    if (syncBtn) {
+        syncBtn.textContent = status.enabled ? 'Disable Claude Sync' : 'Enable Claude Sync';
+    }
+    if (syncStatus) {
+        if (status.enabled && status.lastSync) {
+            syncStatus.textContent = `Last sync: ${status.lastSync.toLocaleTimeString()}`;
+            syncStatus.classList.remove('hidden');
+        } else {
+            syncStatus.classList.add('hidden');
+        }
+    }
 }
 
 // ==================== ITEMS ====================

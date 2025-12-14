@@ -1,0 +1,16 @@
+{
+  "name": "box-inventory-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Box Inventory - allows Claude to query your item locations",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  },
+  "bin": {
+    "box-inventory-mcp": "./index.js"
+  }
+}
