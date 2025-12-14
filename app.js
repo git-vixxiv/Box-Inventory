@@ -1,0 +1,805 @@
+/**
+ * Box Inventory - Main Application
+ */
+
+// ==================== GLOBAL STATE ====================
+let currentView = 'items';
+let currentItemId = null;
+let currentContainerId = null;
+let currentPhotoData = null;
+let searchTimeout = null;
+
+// ==================== DOM ELEMENTS ====================
+const elements = {
+    // Menu
+    menuBtn: document.getElementById('menuBtn'),
+    menu: document.getElementById('menu'),
+
+    // Views
+    itemsView: document.getElementById('itemsView'),
+    containersView: document.getElementById('containersView'),
+    searchView: document.getElementById('searchView'),
+
+    // Lists
+    itemsList: document.getElementById('itemsList'),
+    containersList: document.getElementById('containersList'),
+    searchResults: document.getElementById('searchResults'),
+
+    // Empty states
+    noItems: document.getElementById('noItems'),
+    noContainers: document.getElementById('noContainers'),
+    noResults: document.getElementById('noResults'),
+
+    // Buttons
+    addItemBtn: document.getElementById('addItemBtn'),
+    addContainerBtn: document.getElementById('addContainerBtn'),
+    exportBtn: document.getElementById('exportBtn'),
+    importBtn: document.getElementById('importBtn'),
+    importFile: document.getElementById('importFile'),
+
+    // Search
+    searchInput: document.getElementById('searchInput'),
+
+    // Item Modal
+    itemModal: document.getElementById('itemModal'),
+    itemModalTitle: document.getElementById('itemModalTitle'),
+    itemForm: document.getElementById('itemForm'),
+    itemId: document.getElementById('itemId'),
+    itemName: document.getElementById('itemName'),
+    itemDescription: document.getElementById('itemDescription'),
+    itemContainer: document.getElementById('itemContainer'),
+    itemPhotoPreview: document.getElementById('itemPhotoPreview'),
+    takePhotoBtn: document.getElementById('takePhotoBtn'),
+    choosePhotoBtn: document.getElementById('choosePhotoBtn'),
+    removePhotoBtn: document.getElementById('removePhotoBtn'),
+    photoInput: document.getElementById('photoInput'),
+    photoFileInput: document.getElementById('photoFileInput'),
+
+    // Container Modal
+    containerModal: document.getElementById('containerModal'),
+    containerModalTitle: document.getElementById('containerModalTitle'),
+    containerForm: document.getElementById('containerForm'),
+    containerId: document.getElementById('containerId'),
+    containerName: document.getElementById('containerName'),
+    containerType: document.getElementById('containerType'),
+    containerLocation: document.getElementById('containerLocation'),
+    containerDescription: document.getElementById('containerDescription'),
+
+    // View Item Modal
+    viewItemModal: document.getElementById('viewItemModal'),
+    viewItemTitle: document.getElementById('viewItemTitle'),
+    viewItemContent: document.getElementById('viewItemContent'),
+    deleteItemBtn: document.getElementById('deleteItemBtn'),
+    editItemBtn: document.getElementById('editItemBtn'),
+
+    // View Container Modal
+    viewContainerModal: document.getElementById('viewContainerModal'),
+    viewContainerTitle: document.getElementById('viewContainerTitle'),
+    viewContainerContent: document.getElementById('viewContainerContent'),
+    deleteContainerBtn: document.getElementById('deleteContainerBtn'),
+    editContainerBtn: document.getElementById('editContainerBtn'),
+
+    // Toast
+    toast: document.getElementById('toast')
+};
+
+// ==================== INITIALIZATION ====================
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await db.ready;
+    initEventListeners();
+    await refreshData();
+});
+
+function initEventListeners() {
+    // Menu toggle
+    elements.menuBtn.addEventListener('click', toggleMenu);
+
+    // Click outside menu to close
+    document.addEventListener('click', (e) => {
+        if (!elements.menu.contains(e.target) && e.target !== elements.menuBtn) {
+            elements.menu.classList.add('hidden');
+        }
+    });
+
+    // Menu navigation
+    document.querySelectorAll('.menu-item[data-view]').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            switchView(item.dataset.view);
+            elements.menu.classList.add('hidden');
+        });
+    });
+
+    // Add buttons
+    elements.addItemBtn.addEventListener('click', () => openItemModal());
+    elements.addContainerBtn.addEventListener('click', () => openContainerModal());
+
+    // Export/Import
+    elements.exportBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        exportData();
+        elements.menu.classList.add('hidden');
+    });
+
+    elements.importBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        elements.importFile.click();
+        elements.menu.classList.add('hidden');
+    });
+
+    elements.importFile.addEventListener('change', handleImport);
+
+    // Search
+    elements.searchInput.addEventListener('input', handleSearch);
+    elements.searchInput.addEventListener('focus', () => {
+        if (elements.searchInput.value.trim()) {
+            switchView('search');
+        }
+    });
+
+    // Forms
+    elements.itemForm.addEventListener('submit', handleItemSubmit);
+    elements.containerForm.addEventListener('submit', handleContainerSubmit);
+
+    // Photo buttons
+    elements.takePhotoBtn.addEventListener('click', () => elements.photoInput.click());
+    elements.choosePhotoBtn.addEventListener('click', () => elements.photoFileInput.click());
+    elements.removePhotoBtn.addEventListener('click', removePhoto);
+    elements.photoInput.addEventListener('change', handlePhotoCapture);
+    elements.photoFileInput.addEventListener('change', handlePhotoCapture);
+
+    // Modal close buttons
+    document.querySelectorAll('[data-close]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const modalId = btn.dataset.close;
+            document.getElementById(modalId).classList.add('hidden');
+        });
+    });
+
+    // View modal actions
+    elements.editItemBtn.addEventListener('click', () => {
+        elements.viewItemModal.classList.add('hidden');
+        openItemModal(currentItemId);
+    });
+
+    elements.deleteItemBtn.addEventListener('click', async () => {
+        if (confirm('Are you sure you want to delete this item?')) {
+            await deleteItem(currentItemId);
+            elements.viewItemModal.classList.add('hidden');
+        }
+    });
+
+    elements.editContainerBtn.addEventListener('click', () => {
+        elements.viewContainerModal.classList.add('hidden');
+        openContainerModal(currentContainerId);
+    });
+
+    elements.deleteContainerBtn.addEventListener('click', async () => {
+        await deleteContainer(currentContainerId);
+    });
+
+    // Close modals on backdrop click
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+    });
+}
+
+// ==================== VIEW MANAGEMENT ====================
+
+function toggleMenu() {
+    elements.menu.classList.toggle('hidden');
+}
+
+function switchView(view) {
+    currentView = view;
+
+    // Update menu active state
+    document.querySelectorAll('.menu-item[data-view]').forEach(item => {
+        item.classList.toggle('active', item.dataset.view === view);
+    });
+
+    // Show/hide views
+    elements.itemsView.classList.toggle('active', view === 'items');
+    elements.containersView.classList.toggle('active', view === 'containers');
+    elements.searchView.classList.toggle('active', view === 'search');
+
+    elements.itemsView.classList.toggle('hidden', view !== 'items');
+    elements.containersView.classList.toggle('hidden', view !== 'containers');
+    elements.searchView.classList.toggle('hidden', view !== 'search');
+}
+
+// ==================== DATA REFRESH ====================
+
+async function refreshData() {
+    await Promise.all([
+        renderItems(),
+        renderContainers(),
+        populateContainerSelect()
+    ]);
+}
+
+// ==================== ITEMS ====================
+
+async function renderItems() {
+    const items = await db.getAllItems();
+    const containers = await db.getAllContainers();
+    const containerMap = {};
+    containers.forEach(c => containerMap[c.id] = c);
+
+    elements.itemsList.innerHTML = '';
+    elements.noItems.classList.toggle('hidden', items.length > 0);
+
+    items.forEach(item => {
+        const container = containerMap[item.containerId];
+        const card = createItemCard(item, container);
+        elements.itemsList.appendChild(card);
+    });
+}
+
+function createItemCard(item, container) {
+    const card = document.createElement('div');
+    card.className = 'item-card';
+    card.onclick = () => viewItem(item.id);
+
+    const imageDiv = document.createElement('div');
+    imageDiv.className = 'item-card-image';
+
+    if (item.photo) {
+        const img = document.createElement('img');
+        img.src = item.photo;
+        img.alt = item.name;
+        img.loading = 'lazy';
+        imageDiv.appendChild(img);
+    } else {
+        imageDiv.textContent = '📦';
+    }
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'item-card-content';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'item-card-name';
+    nameDiv.textContent = item.name;
+
+    const locationDiv = document.createElement('div');
+    locationDiv.className = 'item-card-location';
+    locationDiv.textContent = container ? `${container.name} • ${container.location}` : 'No container';
+
+    contentDiv.appendChild(nameDiv);
+    contentDiv.appendChild(locationDiv);
+
+    card.appendChild(imageDiv);
+    card.appendChild(contentDiv);
+
+    return card;
+}
+
+async function viewItem(id) {
+    const item = await db.getItem(id);
+    if (!item) return;
+
+    currentItemId = id;
+    const container = item.containerId ? await db.getContainer(item.containerId) : null;
+
+    elements.viewItemTitle.textContent = item.name;
+
+    let html = '';
+
+    if (item.photo) {
+        html += `<img src="${item.photo}" alt="${item.name}" class="view-item-image">`;
+    }
+
+    if (item.description) {
+        html += `
+            <div class="detail-row">
+                <div class="detail-label">Description</div>
+                <div class="detail-value">${escapeHtml(item.description)}</div>
+            </div>
+        `;
+    }
+
+    if (container) {
+        html += `
+            <div class="detail-row">
+                <div class="detail-label">Container</div>
+                <div class="detail-value location-link" onclick="viewContainerFromItem('${container.id}')">${escapeHtml(container.name)}</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Location</div>
+                <div class="detail-value">${escapeHtml(container.location)}</div>
+            </div>
+        `;
+    }
+
+    html += `
+        <div class="detail-row">
+            <div class="detail-label">Added</div>
+            <div class="detail-value">${formatDate(item.dateAdded)}</div>
+        </div>
+    `;
+
+    elements.viewItemContent.innerHTML = html;
+    elements.viewItemModal.classList.remove('hidden');
+}
+
+// Global function for onclick handler
+window.viewContainerFromItem = async function(containerId) {
+    elements.viewItemModal.classList.add('hidden');
+    await viewContainer(containerId);
+};
+
+async function openItemModal(id = null) {
+    await populateContainerSelect();
+
+    if (id) {
+        const item = await db.getItem(id);
+        if (!item) return;
+
+        elements.itemModalTitle.textContent = 'Edit Item';
+        elements.itemId.value = item.id;
+        elements.itemName.value = item.name;
+        elements.itemDescription.value = item.description || '';
+        elements.itemContainer.value = item.containerId || '';
+
+        if (item.photo) {
+            currentPhotoData = item.photo;
+            elements.itemPhotoPreview.innerHTML = `<img src="${item.photo}" alt="Preview">`;
+            elements.itemPhotoPreview.classList.add('has-photo');
+            elements.removePhotoBtn.classList.remove('hidden');
+        } else {
+            resetPhotoPreview();
+        }
+    } else {
+        elements.itemModalTitle.textContent = 'Add Item';
+        elements.itemForm.reset();
+        elements.itemId.value = '';
+        resetPhotoPreview();
+    }
+
+    elements.itemModal.classList.remove('hidden');
+    elements.itemName.focus();
+}
+
+async function handleItemSubmit(e) {
+    e.preventDefault();
+
+    const id = elements.itemId.value;
+    const data = {
+        name: elements.itemName.value.trim(),
+        description: elements.itemDescription.value.trim(),
+        containerId: elements.itemContainer.value,
+        photo: currentPhotoData
+    };
+
+    try {
+        if (id) {
+            await db.updateItem(id, data);
+            showToast('Item updated!', 'success');
+        } else {
+            await db.addItem(data);
+            showToast('Item added!', 'success');
+        }
+
+        elements.itemModal.classList.add('hidden');
+        await refreshData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function deleteItem(id) {
+    try {
+        await db.deleteItem(id);
+        showToast('Item deleted', 'success');
+        await refreshData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// ==================== CONTAINERS ====================
+
+async function renderContainers() {
+    const containers = await db.getAllContainers();
+    const items = await db.getAllItems();
+
+    // Count items per container
+    const itemCounts = {};
+    items.forEach(item => {
+        itemCounts[item.containerId] = (itemCounts[item.containerId] || 0) + 1;
+    });
+
+    elements.containersList.innerHTML = '';
+    elements.noContainers.classList.toggle('hidden', containers.length > 0);
+
+    containers.forEach(container => {
+        const count = itemCounts[container.id] || 0;
+        const card = createContainerCard(container, count);
+        elements.containersList.appendChild(card);
+    });
+}
+
+function createContainerCard(container, itemCount) {
+    const card = document.createElement('div');
+    card.className = 'container-card';
+    card.onclick = () => viewContainer(container.id);
+
+    const typeLabels = {
+        bin: 'Plastic Bin',
+        box: 'Cardboard Box',
+        shoebox: 'Shoebox',
+        drawer: 'Drawer',
+        cabinet: 'Cabinet',
+        shelf: 'Shelf',
+        closet: 'Closet',
+        other: 'Other'
+    };
+
+    card.innerHTML = `
+        <div class="container-card-header">
+            <div class="container-card-name">${escapeHtml(container.name)}</div>
+            <div class="container-card-type">${typeLabels[container.type] || container.type}</div>
+        </div>
+        <div class="container-card-location">${escapeHtml(container.location)}</div>
+        <div class="container-card-count">${itemCount} item${itemCount !== 1 ? 's' : ''}</div>
+    `;
+
+    return card;
+}
+
+async function viewContainer(id) {
+    const container = await db.getContainer(id);
+    if (!container) return;
+
+    currentContainerId = id;
+    const items = await db.getItemsByContainer(id);
+
+    const typeLabels = {
+        bin: 'Plastic Bin',
+        box: 'Cardboard Box',
+        shoebox: 'Shoebox',
+        drawer: 'Drawer',
+        cabinet: 'Cabinet',
+        shelf: 'Shelf',
+        closet: 'Closet',
+        other: 'Other'
+    };
+
+    elements.viewContainerTitle.textContent = container.name;
+
+    let html = `
+        <div class="detail-row">
+            <div class="detail-label">Type</div>
+            <div class="detail-value">${typeLabels[container.type] || container.type}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Location</div>
+            <div class="detail-value">${escapeHtml(container.location)}</div>
+        </div>
+    `;
+
+    if (container.description) {
+        html += `
+            <div class="detail-row">
+                <div class="detail-label">Description</div>
+                <div class="detail-value">${escapeHtml(container.description)}</div>
+            </div>
+        `;
+    }
+
+    if (items.length > 0) {
+        html += `
+            <div class="container-items-list">
+                <h4>Items in this container (${items.length})</h4>
+                ${items.map(item => `
+                    <div class="container-item" onclick="viewItemFromContainer('${item.id}')">
+                        <div class="container-item-thumb">
+                            ${item.photo ? `<img src="${item.photo}" alt="${escapeHtml(item.name)}">` : '📦'}
+                        </div>
+                        <div class="container-item-name">${escapeHtml(item.name)}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    elements.viewContainerContent.innerHTML = html;
+    elements.viewContainerModal.classList.remove('hidden');
+}
+
+// Global function for onclick handler
+window.viewItemFromContainer = async function(itemId) {
+    elements.viewContainerModal.classList.add('hidden');
+    await viewItem(itemId);
+};
+
+async function openContainerModal(id = null) {
+    if (id) {
+        const container = await db.getContainer(id);
+        if (!container) return;
+
+        elements.containerModalTitle.textContent = 'Edit Container';
+        elements.containerId.value = container.id;
+        elements.containerName.value = container.name;
+        elements.containerType.value = container.type;
+        elements.containerLocation.value = container.location;
+        elements.containerDescription.value = container.description || '';
+    } else {
+        elements.containerModalTitle.textContent = 'Add Container';
+        elements.containerForm.reset();
+        elements.containerId.value = '';
+    }
+
+    elements.containerModal.classList.remove('hidden');
+    elements.containerName.focus();
+}
+
+async function handleContainerSubmit(e) {
+    e.preventDefault();
+
+    const id = elements.containerId.value;
+    const data = {
+        name: elements.containerName.value.trim(),
+        type: elements.containerType.value,
+        location: elements.containerLocation.value.trim(),
+        description: elements.containerDescription.value.trim()
+    };
+
+    try {
+        if (id) {
+            await db.updateContainer(id, data);
+            showToast('Container updated!', 'success');
+        } else {
+            await db.addContainer(data);
+            showToast('Container added!', 'success');
+        }
+
+        elements.containerModal.classList.add('hidden');
+        await refreshData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function deleteContainer(id) {
+    try {
+        await db.deleteContainer(id);
+        showToast('Container deleted', 'success');
+        elements.viewContainerModal.classList.add('hidden');
+        await refreshData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function populateContainerSelect() {
+    const containers = await db.getAllContainers();
+    elements.itemContainer.innerHTML = '<option value="">Select a container...</option>';
+
+    containers.forEach(container => {
+        const option = document.createElement('option');
+        option.value = container.id;
+        option.textContent = `${container.name} (${container.location})`;
+        elements.itemContainer.appendChild(option);
+    });
+}
+
+// ==================== PHOTOS ====================
+
+function handlePhotoCapture(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Compress and resize the image
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxSize = 800;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxSize) {
+                    height *= maxSize / width;
+                    width = maxSize;
+                }
+            } else {
+                if (height > maxSize) {
+                    width *= maxSize / height;
+                    height = maxSize;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            currentPhotoData = canvas.toDataURL('image/jpeg', 0.8);
+            elements.itemPhotoPreview.innerHTML = `<img src="${currentPhotoData}" alt="Preview">`;
+            elements.itemPhotoPreview.classList.add('has-photo');
+            elements.removePhotoBtn.classList.remove('hidden');
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+}
+
+function removePhoto() {
+    currentPhotoData = null;
+    resetPhotoPreview();
+}
+
+function resetPhotoPreview() {
+    currentPhotoData = null;
+    elements.itemPhotoPreview.innerHTML = '<span>No photo</span>';
+    elements.itemPhotoPreview.classList.remove('has-photo');
+    elements.removePhotoBtn.classList.add('hidden');
+}
+
+// ==================== SEARCH ====================
+
+async function handleSearch() {
+    const query = elements.searchInput.value.trim();
+
+    // Debounce search
+    clearTimeout(searchTimeout);
+
+    if (!query) {
+        elements.searchResults.innerHTML = '';
+        elements.noResults.textContent = 'Type to search your inventory...';
+        elements.noResults.classList.remove('hidden');
+        return;
+    }
+
+    // Switch to search view if not already there
+    if (currentView !== 'search') {
+        switchView('search');
+    }
+
+    searchTimeout = setTimeout(async () => {
+        const results = await db.search(query);
+        renderSearchResults(results);
+    }, 200);
+}
+
+async function renderSearchResults(results) {
+    const containers = await db.getAllContainers();
+    const containerMap = {};
+    containers.forEach(c => containerMap[c.id] = c);
+
+    elements.searchResults.innerHTML = '';
+
+    const totalResults = results.items.length + results.containers.length;
+
+    if (totalResults === 0) {
+        elements.noResults.textContent = 'No results found';
+        elements.noResults.classList.remove('hidden');
+        return;
+    }
+
+    elements.noResults.classList.add('hidden');
+
+    // Render matched containers first
+    results.containers.forEach(container => {
+        const card = document.createElement('div');
+        card.className = 'container-card';
+        card.onclick = () => viewContainer(container.id);
+        card.innerHTML = `
+            <div class="container-card-header">
+                <div class="container-card-name">${escapeHtml(container.name)}</div>
+                <div class="container-card-type">Container</div>
+            </div>
+            <div class="container-card-location">${escapeHtml(container.location)}</div>
+        `;
+        elements.searchResults.appendChild(card);
+    });
+
+    // Render matched items
+    results.items.forEach(item => {
+        const container = containerMap[item.containerId];
+        const card = createItemCard(item, container);
+        elements.searchResults.appendChild(card);
+    });
+}
+
+// ==================== EXPORT / IMPORT ====================
+
+async function exportData() {
+    try {
+        const data = await db.exportFullBackup();
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `box-inventory-${formatDateForFile(new Date())}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('Data exported!', 'success');
+    } catch (error) {
+        showToast('Export failed: ' + error.message, 'error');
+    }
+}
+
+async function handleImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!confirm('This will replace all your current data. Are you sure you want to import?')) {
+        e.target.value = '';
+        return;
+    }
+
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const result = await db.importData(data);
+
+        showToast(`Imported ${result.containersImported} containers and ${result.itemsImported} items!`, 'success');
+        await refreshData();
+    } catch (error) {
+        showToast('Import failed: ' + error.message, 'error');
+    }
+
+    e.target.value = '';
+}
+
+// ==================== UTILITIES ====================
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatDate(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function formatDateForFile(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function showToast(message, type = '') {
+    elements.toast.textContent = message;
+    elements.toast.className = `toast ${type}`;
+    elements.toast.classList.remove('hidden');
+
+    setTimeout(() => {
+        elements.toast.classList.add('hidden');
+    }, 3000);
+}
+
+// ==================== SERVICE WORKER REGISTRATION ====================
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+            .then(registration => {
+                console.log('ServiceWorker registered:', registration.scope);
+            })
+            .catch(error => {
+                console.log('ServiceWorker registration failed:', error);
+            });
+    });
+}

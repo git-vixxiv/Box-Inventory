@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="description" content="Track where you store your items - boxes, bins, drawers, and more">
+    <title>Box Inventory</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon.svg">
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>Box Inventory</h1>
+            <button id="menuBtn" class="icon-btn" aria-label="Menu">☰</button>
+        </header>
+
+        <!-- Navigation Menu (hidden by default) -->
+        <nav id="menu" class="menu hidden">
+            <a href="#" data-view="items" class="menu-item active">Items</a>
+            <a href="#" data-view="containers" class="menu-item">Containers</a>
+            <a href="#" data-view="search" class="menu-item">Search</a>
+            <hr>
+            <a href="#" id="exportBtn" class="menu-item">Export Data (JSON)</a>
+            <a href="#" id="importBtn" class="menu-item">Import Data</a>
+            <input type="file" id="importFile" accept=".json" class="hidden">
+        </nav>
+
+        <!-- Search Bar (always visible) -->
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Search items or containers...">
+        </div>
+
+        <!-- Main Content Views -->
+        <main id="content">
+            <!-- Items View -->
+            <section id="itemsView" class="view active">
+                <div class="view-header">
+                    <h2>My Items</h2>
+                    <button id="addItemBtn" class="primary-btn">+ Add Item</button>
+                </div>
+                <div id="itemsList" class="items-grid">
+                    <!-- Items will be rendered here -->
+                </div>
+                <p id="noItems" class="empty-state hidden">No items yet. Add your first item!</p>
+            </section>
+
+            <!-- Containers View -->
+            <section id="containersView" class="view hidden">
+                <div class="view-header">
+                    <h2>My Containers</h2>
+                    <button id="addContainerBtn" class="primary-btn">+ Add Container</button>
+                </div>
+                <div id="containersList" class="containers-list">
+                    <!-- Containers will be rendered here -->
+                </div>
+                <p id="noContainers" class="empty-state hidden">No containers yet. Add a box, bin, or drawer!</p>
+            </section>
+
+            <!-- Search Results View -->
+            <section id="searchView" class="view hidden">
+                <div class="view-header">
+                    <h2>Search Results</h2>
+                </div>
+                <div id="searchResults" class="items-grid">
+                    <!-- Search results will be rendered here -->
+                </div>
+                <p id="noResults" class="empty-state">Type to search your inventory...</p>
+            </section>
+        </main>
+
+        <!-- Add/Edit Item Modal -->
+        <div id="itemModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="itemModalTitle">Add Item</h3>
+                    <button class="close-btn" data-close="itemModal">&times;</button>
+                </div>
+                <form id="itemForm">
+                    <input type="hidden" id="itemId">
+
+                    <div class="form-group">
+                        <label for="itemName">Item Name *</label>
+                        <input type="text" id="itemName" required placeholder="e.g., Red Hammer">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="itemDescription">Description</label>
+                        <textarea id="itemDescription" rows="2" placeholder="e.g., 16oz claw hammer with red rubber grip"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="itemContainer">Container *</label>
+                        <select id="itemContainer" required>
+                            <option value="">Select a container...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Photo</label>
+                        <div class="photo-input">
+                            <div id="itemPhotoPreview" class="photo-preview">
+                                <span>No photo</span>
+                            </div>
+                            <div class="photo-buttons">
+                                <button type="button" id="takePhotoBtn" class="secondary-btn">📷 Take Photo</button>
+                                <button type="button" id="choosePhotoBtn" class="secondary-btn">📁 Choose File</button>
+                                <button type="button" id="removePhotoBtn" class="secondary-btn danger hidden">Remove</button>
+                            </div>
+                            <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden">
+                            <input type="file" id="photoFileInput" accept="image/*" class="hidden">
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="secondary-btn" data-close="itemModal">Cancel</button>
+                        <button type="submit" class="primary-btn">Save Item</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Add/Edit Container Modal -->
+        <div id="containerModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="containerModalTitle">Add Container</h3>
+                    <button class="close-btn" data-close="containerModal">&times;</button>
+                </div>
+                <form id="containerForm">
+                    <input type="hidden" id="containerId">
+
+                    <div class="form-group">
+                        <label for="containerName">Container Name *</label>
+                        <input type="text" id="containerName" required placeholder="e.g., Plastic Bin #4">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="containerType">Type</label>
+                        <select id="containerType">
+                            <option value="bin">Plastic Bin</option>
+                            <option value="box">Cardboard Box</option>
+                            <option value="shoebox">Shoebox</option>
+                            <option value="drawer">Drawer</option>
+                            <option value="cabinet">Cabinet</option>
+                            <option value="shelf">Shelf</option>
+                            <option value="closet">Closet</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="containerLocation">Location *</label>
+                        <input type="text" id="containerLocation" required placeholder="e.g., Top shelf in garage">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="containerDescription">Description</label>
+                        <textarea id="containerDescription" rows="2" placeholder="e.g., Large clear bin with blue lid"></textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="secondary-btn" data-close="containerModal">Cancel</button>
+                        <button type="submit" class="primary-btn">Save Container</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- View Item Modal -->
+        <div id="viewItemModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="viewItemTitle">Item Details</h3>
+                    <button class="close-btn" data-close="viewItemModal">&times;</button>
+                </div>
+                <div id="viewItemContent" class="view-item-content">
+                    <!-- Item details will be rendered here -->
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="deleteItemBtn" class="secondary-btn danger">Delete</button>
+                    <button type="button" id="editItemBtn" class="primary-btn">Edit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- View Container Modal -->
+        <div id="viewContainerModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="viewContainerTitle">Container Details</h3>
+                    <button class="close-btn" data-close="viewContainerModal">&times;</button>
+                </div>
+                <div id="viewContainerContent" class="view-container-content">
+                    <!-- Container details will be rendered here -->
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="deleteContainerBtn" class="secondary-btn danger">Delete</button>
+                    <button type="button" id="editContainerBtn" class="primary-btn">Edit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast notifications -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="db.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

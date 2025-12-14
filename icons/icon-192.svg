@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#2563eb"/>
+  <g transform="translate(32, 40)">
+    <!-- Box body -->
+    <rect x="8" y="32" width="112" height="80" rx="8" fill="white" opacity="0.9"/>
+    <!-- Box lid -->
+    <path d="M0 32 L64 8 L128 32 L64 40 Z" fill="white"/>
+    <!-- Box tape/stripe -->
+    <rect x="56" y="32" width="16" height="80" fill="#2563eb" opacity="0.3"/>
+    <!-- Magnifying glass -->
+    <circle cx="100" cy="88" r="20" fill="none" stroke="white" stroke-width="6"/>
+    <line x1="114" y1="102" x2="128" y2="116" stroke="white" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
