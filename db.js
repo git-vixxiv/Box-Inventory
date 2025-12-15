@@ -74,6 +74,7 @@ class InventoryDB {
             type: container.type || 'box',
             location: container.location,
             description: container.description || '',
+            photo: container.photo || null,
             dateAdded: new Date().toISOString(),
             dateModified: new Date().toISOString()
         };

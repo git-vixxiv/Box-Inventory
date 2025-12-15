@@ -15,7 +15,7 @@
     <div id="app">
         <!-- Header -->
         <header class="header">
-            <h1>Box Inventory</h1>
+            <a href="#" id="logoLink" class="logo-link"><h1>Box Inventory</h1></a>
             <button id="menuBtn" class="icon-btn" aria-label="Menu">☰</button>
         </header>
 
@@ -121,6 +121,7 @@
 
                     <div class="form-actions">
                         <button type="button" class="secondary-btn" data-close="itemModal">Cancel</button>
+                        <button type="button" id="saveAndAddAnotherBtn" class="secondary-btn">Save & Add Another</button>
                         <button type="submit" class="primary-btn">Save Item</button>
                     </div>
                 </form>
@@ -164,6 +165,22 @@
                     <div class="form-group">
                         <label for="containerDescription">Description</label>
                         <textarea id="containerDescription" rows="2" placeholder="e.g., Large clear bin with blue lid"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Photo</label>
+                        <div class="photo-input">
+                            <div id="containerPhotoPreview" class="photo-preview">
+                                <span>No photo</span>
+                            </div>
+                            <div class="photo-buttons">
+                                <button type="button" id="containerTakePhotoBtn" class="secondary-btn">📷 Take Photo</button>
+                                <button type="button" id="containerChoosePhotoBtn" class="secondary-btn">📁 Choose File</button>
+                                <button type="button" id="containerRemovePhotoBtn" class="secondary-btn danger hidden">Remove</button>
+                            </div>
+                            <input type="file" id="containerPhotoInput" accept="image/*" capture="environment" class="hidden">
+                            <input type="file" id="containerPhotoFileInput" accept="image/*" class="hidden">
+                        </div>
                     </div>
 
                     <div class="form-actions">

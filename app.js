@@ -7,7 +7,9 @@ let currentView = 'items';
 let currentItemId = null;
 let currentContainerId = null;
 let currentPhotoData = null;
+let currentContainerPhotoData = null;
 let searchTimeout = null;
+let addAnotherMode = false;
 
 // ==================== DOM ELEMENTS ====================
 const elements = {
@@ -64,6 +66,12 @@ const elements = {
     containerType: document.getElementById('containerType'),
     containerLocation: document.getElementById('containerLocation'),
     containerDescription: document.getElementById('containerDescription'),
+    containerPhotoPreview: document.getElementById('containerPhotoPreview'),
+    containerTakePhotoBtn: document.getElementById('containerTakePhotoBtn'),
+    containerChoosePhotoBtn: document.getElementById('containerChoosePhotoBtn'),
+    containerRemovePhotoBtn: document.getElementById('containerRemovePhotoBtn'),
+    containerPhotoInput: document.getElementById('containerPhotoInput'),
+    containerPhotoFileInput: document.getElementById('containerPhotoFileInput'),
 
     // View Item Modal
     viewItemModal: document.getElementById('viewItemModal'),
@@ -94,6 +102,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 function initEventListeners() {
     // Menu toggle
     elements.menuBtn.addEventListener('click', toggleMenu);
+
+    // Logo link - return to items view
+    const logoLink = document.getElementById('logoLink');
+    if (logoLink) {
+        logoLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            switchView('items');
+            elements.searchInput.value = '';
+        });
+    }
 
     // Click outside menu to close
     document.addEventListener('click', (e) => {
@@ -156,12 +174,28 @@ function initEventListeners() {
     elements.itemForm.addEventListener('submit', handleItemSubmit);
     elements.containerForm.addEventListener('submit', handleContainerSubmit);
 
-    // Photo buttons
+    // Photo buttons (items)
     elements.takePhotoBtn.addEventListener('click', () => elements.photoInput.click());
     elements.choosePhotoBtn.addEventListener('click', () => elements.photoFileInput.click());
     elements.removePhotoBtn.addEventListener('click', removePhoto);
     elements.photoInput.addEventListener('change', handlePhotoCapture);
     elements.photoFileInput.addEventListener('change', handlePhotoCapture);
+
+    // Photo buttons (containers)
+    elements.containerTakePhotoBtn.addEventListener('click', () => elements.containerPhotoInput.click());
+    elements.containerChoosePhotoBtn.addEventListener('click', () => elements.containerPhotoFileInput.click());
+    elements.containerRemovePhotoBtn.addEventListener('click', removeContainerPhoto);
+    elements.containerPhotoInput.addEventListener('change', handleContainerPhotoCapture);
+    elements.containerPhotoFileInput.addEventListener('change', handleContainerPhotoCapture);
+
+    // Save & Add Another button
+    const saveAndAddAnotherBtn = document.getElementById('saveAndAddAnotherBtn');
+    if (saveAndAddAnotherBtn) {
+        saveAndAddAnotherBtn.addEventListener('click', () => {
+            addAnotherMode = true;
+            elements.itemForm.requestSubmit();
+        });
+    }
 
     // Modal close buttons
     document.querySelectorAll('[data-close]').forEach(btn => {
@@ -427,10 +461,11 @@ async function handleItemSubmit(e) {
     e.preventDefault();
 
     const id = elements.itemId.value;
+    const selectedContainer = elements.itemContainer.value;
     const data = {
         name: elements.itemName.value.trim(),
         description: elements.itemDescription.value.trim(),
-        containerId: elements.itemContainer.value,
+        containerId: selectedContainer,
         photo: currentPhotoData
     };
 
@@ -443,9 +478,24 @@ async function handleItemSubmit(e) {
             showToast('Item added!', 'success');
         }
 
-        elements.itemModal.classList.add('hidden');
         await refreshData();
+
+        // Handle "Add Another" mode
+        if (addAnotherMode && !id) {
+            addAnotherMode = false;
+            // Reset form but keep the same container selected
+            elements.itemForm.reset();
+            elements.itemId.value = '';
+            elements.itemContainer.value = selectedContainer;
+            resetPhotoPreview();
+            elements.itemName.focus();
+            showToast('Item added! Add another...', 'success');
+        } else {
+            addAnotherMode = false;
+            elements.itemModal.classList.add('hidden');
+        }
     } catch (error) {
+        addAnotherMode = false;
         showToast(error.message, 'error');
     }
 }
@@ -530,7 +580,13 @@ async function viewContainer(id) {
 
     elements.viewContainerTitle.textContent = container.name;
 
-    let html = `
+    let html = '';
+
+    if (container.photo) {
+        html += `<img src="${container.photo}" alt="${escapeHtml(container.name)}" class="view-item-image">`;
+    }
+
+    html += `
         <div class="detail-row">
             <div class="detail-label">Type</div>
             <div class="detail-value">${typeLabels[container.type] || container.type}</div>
@@ -587,10 +643,20 @@ async function openContainerModal(id = null) {
         elements.containerType.value = container.type;
         elements.containerLocation.value = container.location;
         elements.containerDescription.value = container.description || '';
+
+        if (container.photo) {
+            currentContainerPhotoData = container.photo;
+            elements.containerPhotoPreview.innerHTML = `<img src="${container.photo}" alt="Preview">`;
+            elements.containerPhotoPreview.classList.add('has-photo');
+            elements.containerRemovePhotoBtn.classList.remove('hidden');
+        } else {
+            resetContainerPhotoPreview();
+        }
     } else {
         elements.containerModalTitle.textContent = 'Add Container';
         elements.containerForm.reset();
         elements.containerId.value = '';
+        resetContainerPhotoPreview();
     }
 
     elements.containerModal.classList.remove('hidden');
@@ -605,7 +671,8 @@ async function handleContainerSubmit(e) {
         name: elements.containerName.value.trim(),
         type: elements.containerType.value,
         location: elements.containerLocation.value.trim(),
-        description: elements.containerDescription.value.trim()
+        description: elements.containerDescription.value.trim(),
+        photo: currentContainerPhotoData
     };
 
     try {
@@ -703,6 +770,64 @@ function resetPhotoPreview() {
     elements.itemPhotoPreview.innerHTML = '<span>No photo</span>';
     elements.itemPhotoPreview.classList.remove('has-photo');
     elements.removePhotoBtn.classList.add('hidden');
+}
+
+// ==================== CONTAINER PHOTOS ====================
+
+function handleContainerPhotoCapture(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Compress and resize the image
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxSize = 800;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxSize) {
+                    height *= maxSize / width;
+                    width = maxSize;
+                }
+            } else {
+                if (height > maxSize) {
+                    width *= maxSize / height;
+                    height = maxSize;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            currentContainerPhotoData = canvas.toDataURL('image/jpeg', 0.8);
+            elements.containerPhotoPreview.innerHTML = `<img src="${currentContainerPhotoData}" alt="Preview">`;
+            elements.containerPhotoPreview.classList.add('has-photo');
+            elements.containerRemovePhotoBtn.classList.remove('hidden');
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+}
+
+function removeContainerPhoto() {
+    currentContainerPhotoData = null;
+    resetContainerPhotoPreview();
+}
+
+function resetContainerPhotoPreview() {
+    currentContainerPhotoData = null;
+    elements.containerPhotoPreview.innerHTML = '<span>No photo</span>';
+    elements.containerPhotoPreview.classList.remove('has-photo');
+    elements.containerRemovePhotoBtn.classList.add('hidden');
 }
 
 // ==================== SEARCH ====================
