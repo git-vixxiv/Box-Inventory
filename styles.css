@@ -675,13 +675,197 @@ body {
     }
 }
 
+/* Auth Bar */
+.auth-bar {
+    background: var(--gray-50);
+    padding: 0.5rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--gray-200);
+    font-size: 0.875rem;
+}
+
+.auth-bar.hidden {
+    display: none;
+}
+
+.auth-loading {
+    color: var(--gray-500);
+}
+
+.auth-logged-out,
+.auth-logged-in {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.auth-logged-out.hidden,
+.auth-logged-in.hidden {
+    display: none;
+}
+
+.auth-btn {
+    background: var(--white);
+    border: 1px solid var(--gray-300);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    cursor: pointer;
+    color: var(--gray-700);
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.auth-btn:hover {
+    background: var(--gray-100);
+    border-color: var(--gray-400);
+}
+
+.auth-btn-small {
+    background: transparent;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    cursor: pointer;
+}
+
+.auth-btn-small:hover {
+    color: var(--gray-700);
+    text-decoration: underline;
+}
+
+.user-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.user-name {
+    color: var(--gray-700);
+    font-size: 0.875rem;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Badge for menu items */
+.badge {
+    background: var(--danger);
+    color: var(--white);
+    font-size: 0.7rem;
+    padding: 0.125rem 0.4rem;
+    border-radius: 999px;
+    margin-left: 0.5rem;
+    font-weight: 600;
+}
+
+.badge.hidden {
+    display: none;
+}
+
+/* Sign-in prompt */
+.sign-in-prompt {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.sign-in-prompt h2 {
+    color: var(--gray-800);
+    margin-bottom: 0.75rem;
+}
+
+.sign-in-prompt p {
+    color: var(--gray-600);
+    margin-bottom: 1.5rem;
+}
+
+.sign-in-prompt .large {
+    padding: 0.875rem 2rem;
+    font-size: 1rem;
+}
+
+.sign-in-note {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    margin-top: 1.5rem;
+}
+
+/* Form help text */
+.form-help {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    padding: 0 1rem;
+    margin-bottom: 1rem;
+}
+
+.form-help.hidden {
+    display: none;
+}
+
+/* Checked out status indicator */
+.item-card-status {
+    font-size: 0.7rem;
+    padding: 0.125rem 0.4rem;
+    border-radius: 4px;
+    margin-top: 0.25rem;
+    display: inline-block;
+}
+
+.item-card-status.checked-out {
+    background: var(--warning);
+    color: var(--white);
+}
+
+/* Checked out item card styling */
+.item-card.checked-out {
+    border: 2px solid var(--warning);
+}
+
+.item-card.checked-out .item-card-location {
+    color: var(--warning);
+    font-weight: 500;
+}
+
+/* View item checked out info */
+.checked-out-info {
+    background: #fef3cd;
+    border: 1px solid var(--warning);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.checked-out-info .status-label {
+    font-weight: 600;
+    color: var(--warning);
+    margin-bottom: 0.25rem;
+}
+
+.checked-out-info .status-details {
+    font-size: 0.875rem;
+    color: var(--gray-700);
+}
+
+/* Small modal */
+.modal-small {
+    max-width: 400px;
+}
+
 /* Print styles for export */
 @media print {
     .header,
     .menu,
     .search-bar,
     .primary-btn,
-    .modal {
+    .modal,
+    .auth-bar {
         display: none !important;
     }
 

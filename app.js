@@ -1,6 +1,10 @@
 /**
  * Box Inventory - Main Application
+ * Supports both local IndexedDB and Firebase cloud sync
  */
+
+import { firebaseDB } from './firebase-db.js';
+import { isFirebaseConfigured } from './firebase-config.js';
 
 // ==================== GLOBAL STATE ====================
 let currentView = 'items';
@@ -10,27 +14,50 @@ let currentPhotoData = null;
 let currentContainerPhotoData = null;
 let searchTimeout = null;
 let addAnotherMode = false;
+let useFirebase = false;
+let firebaseInitialized = false;
+
+// Active database - will be either local 'db' or 'firebaseDB'
+let activeDB = null;
 
 // ==================== DOM ELEMENTS ====================
 const elements = {
+    // Auth
+    authBar: document.getElementById('authBar'),
+    authLoading: document.getElementById('authLoading'),
+    authLoggedOut: document.getElementById('authLoggedOut'),
+    authLoggedIn: document.getElementById('authLoggedIn'),
+    signInBtn: document.getElementById('signInBtn'),
+    signOutBtn: document.getElementById('signOutBtn'),
+    signInPromptBtn: document.getElementById('signInPromptBtn'),
+    userAvatar: document.getElementById('userAvatar'),
+    userName: document.getElementById('userName'),
+
     // Menu
     menuBtn: document.getElementById('menuBtn'),
     menu: document.getElementById('menu'),
 
     // Views
+    notSignedInView: document.getElementById('notSignedInView'),
     itemsView: document.getElementById('itemsView'),
+    checkedOutView: document.getElementById('checkedOutView'),
     containersView: document.getElementById('containersView'),
     searchView: document.getElementById('searchView'),
 
     // Lists
     itemsList: document.getElementById('itemsList'),
+    checkedOutList: document.getElementById('checkedOutList'),
     containersList: document.getElementById('containersList'),
     searchResults: document.getElementById('searchResults'),
 
     // Empty states
     noItems: document.getElementById('noItems'),
+    noCheckedOut: document.getElementById('noCheckedOut'),
     noContainers: document.getElementById('noContainers'),
     noResults: document.getElementById('noResults'),
+
+    // Badge
+    checkedOutBadge: document.getElementById('checkedOutBadge'),
 
     // Buttons
     addItemBtn: document.getElementById('addItemBtn'),
@@ -77,8 +104,13 @@ const elements = {
     viewItemModal: document.getElementById('viewItemModal'),
     viewItemTitle: document.getElementById('viewItemTitle'),
     viewItemContent: document.getElementById('viewItemContent'),
+    viewItemActions: document.getElementById('viewItemActions'),
+    viewItemCheckedOutActions: document.getElementById('viewItemCheckedOutActions'),
     deleteItemBtn: document.getElementById('deleteItemBtn'),
+    deleteItemBtn2: document.getElementById('deleteItemBtn2'),
     editItemBtn: document.getElementById('editItemBtn'),
+    checkOutItemBtn: document.getElementById('checkOutItemBtn'),
+    checkInItemBtn: document.getElementById('checkInItemBtn'),
 
     // View Container Modal
     viewContainerModal: document.getElementById('viewContainerModal'),
@@ -87,6 +119,18 @@ const elements = {
     deleteContainerBtn: document.getElementById('deleteContainerBtn'),
     editContainerBtn: document.getElementById('editContainerBtn'),
 
+    // Check Out Modal
+    checkOutModal: document.getElementById('checkOutModal'),
+    checkOutForm: document.getElementById('checkOutForm'),
+    checkOutNote: document.getElementById('checkOutNote'),
+
+    // Check In Modal
+    checkInModal: document.getElementById('checkInModal'),
+    checkInForm: document.getElementById('checkInForm'),
+    checkInContainer: document.getElementById('checkInContainer'),
+    previousContainerNote: document.getElementById('previousContainerNote'),
+    previousContainerName: document.getElementById('previousContainerName'),
+
     // Toast
     toast: document.getElementById('toast')
 };
@@ -94,12 +138,96 @@ const elements = {
 // ==================== INITIALIZATION ====================
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Wait for local db to be ready
     await db.ready;
+    activeDB = db; // Start with local database
+
+    // Try to initialize Firebase
+    if (isFirebaseConfigured()) {
+        elements.authBar.classList.remove('hidden');
+        firebaseInitialized = await firebaseDB.init();
+
+        if (firebaseInitialized) {
+            // Set up auth state listener
+            firebaseDB.onAuthStateChange(handleAuthStateChange);
+        } else {
+            // Firebase init failed, hide auth bar
+            elements.authBar.classList.add('hidden');
+            elements.authLoading.classList.add('hidden');
+        }
+    } else {
+        // Firebase not configured, use local only
+        elements.authBar.classList.add('hidden');
+    }
+
     initEventListeners();
     await refreshData();
 });
 
+function handleAuthStateChange(user) {
+    elements.authLoading.classList.add('hidden');
+
+    if (user) {
+        // User is signed in
+        useFirebase = true;
+        activeDB = firebaseDB;
+
+        elements.authLoggedOut.classList.add('hidden');
+        elements.authLoggedIn.classList.remove('hidden');
+        elements.userAvatar.src = user.photoURL || '';
+        elements.userName.textContent = user.displayName || user.email;
+
+        // Show main app views
+        elements.notSignedInView.classList.add('hidden');
+        elements.notSignedInView.classList.remove('active');
+
+        // Refresh data from Firebase
+        refreshData();
+    } else {
+        // User is signed out
+        useFirebase = false;
+        activeDB = db; // Fall back to local database
+
+        elements.authLoggedIn.classList.add('hidden');
+        elements.authLoggedOut.classList.remove('hidden');
+
+        // Show sign-in prompt if Firebase is configured
+        if (isFirebaseConfigured()) {
+            showSignInPrompt();
+        }
+
+        refreshData();
+    }
+}
+
+function showSignInPrompt() {
+    // Hide all views
+    elements.itemsView.classList.add('hidden');
+    elements.itemsView.classList.remove('active');
+    elements.containersView.classList.add('hidden');
+    elements.containersView.classList.remove('active');
+    elements.searchView.classList.add('hidden');
+    elements.searchView.classList.remove('active');
+    elements.checkedOutView.classList.add('hidden');
+    elements.checkedOutView.classList.remove('active');
+
+    // Show sign-in prompt
+    elements.notSignedInView.classList.remove('hidden');
+    elements.notSignedInView.classList.add('active');
+}
+
 function initEventListeners() {
+    // Auth buttons
+    if (elements.signInBtn) {
+        elements.signInBtn.addEventListener('click', handleSignIn);
+    }
+    if (elements.signOutBtn) {
+        elements.signOutBtn.addEventListener('click', handleSignOut);
+    }
+    if (elements.signInPromptBtn) {
+        elements.signInPromptBtn.addEventListener('click', handleSignIn);
+    }
+
     // Menu toggle
     elements.menuBtn.addEventListener('click', toggleMenu);
 
@@ -218,6 +346,42 @@ function initEventListeners() {
         }
     });
 
+    // Second delete button (for checked out view)
+    if (elements.deleteItemBtn2) {
+        elements.deleteItemBtn2.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to delete this item?')) {
+                await deleteItem(currentItemId);
+                elements.viewItemModal.classList.add('hidden');
+            }
+        });
+    }
+
+    // Check out button
+    if (elements.checkOutItemBtn) {
+        elements.checkOutItemBtn.addEventListener('click', () => {
+            elements.viewItemModal.classList.add('hidden');
+            openCheckOutModal();
+        });
+    }
+
+    // Check in button
+    if (elements.checkInItemBtn) {
+        elements.checkInItemBtn.addEventListener('click', async () => {
+            elements.viewItemModal.classList.add('hidden');
+            await openCheckInModal();
+        });
+    }
+
+    // Check out form
+    if (elements.checkOutForm) {
+        elements.checkOutForm.addEventListener('submit', handleCheckOut);
+    }
+
+    // Check in form
+    if (elements.checkInForm) {
+        elements.checkInForm.addEventListener('submit', handleCheckIn);
+    }
+
     elements.editContainerBtn.addEventListener('click', () => {
         elements.viewContainerModal.classList.add('hidden');
         openContainerModal(currentContainerId);
@@ -237,6 +401,27 @@ function initEventListeners() {
     });
 }
 
+// ==================== AUTHENTICATION ====================
+
+async function handleSignIn() {
+    try {
+        await firebaseDB.signIn();
+    } catch (error) {
+        if (error.code !== 'auth/popup-closed-by-user') {
+            showToast('Sign in failed: ' + error.message, 'error');
+        }
+    }
+}
+
+async function handleSignOut() {
+    try {
+        await firebaseDB.signOutUser();
+        showToast('Signed out successfully', 'success');
+    } catch (error) {
+        showToast('Sign out failed: ' + error.message, 'error');
+    }
+}
+
 // ==================== VIEW MANAGEMENT ====================
 
 function toggleMenu() {
@@ -244,6 +429,11 @@ function toggleMenu() {
 }
 
 function switchView(view) {
+    // Don't allow view switching if showing sign-in prompt
+    if (elements.notSignedInView.classList.contains('active') && isFirebaseConfigured() && !useFirebase) {
+        return;
+    }
+
     currentView = view;
 
     // Update menu active state
@@ -252,11 +442,16 @@ function switchView(view) {
     });
 
     // Show/hide views
+    elements.notSignedInView.classList.add('hidden');
+    elements.notSignedInView.classList.remove('active');
+
     elements.itemsView.classList.toggle('active', view === 'items');
+    elements.checkedOutView.classList.toggle('active', view === 'checkedOut');
     elements.containersView.classList.toggle('active', view === 'containers');
     elements.searchView.classList.toggle('active', view === 'search');
 
     elements.itemsView.classList.toggle('hidden', view !== 'items');
+    elements.checkedOutView.classList.toggle('hidden', view !== 'checkedOut');
     elements.containersView.classList.toggle('hidden', view !== 'containers');
     elements.searchView.classList.toggle('hidden', view !== 'search');
 }
@@ -266,12 +461,13 @@ function switchView(view) {
 async function refreshData() {
     await Promise.all([
         renderItems(),
+        renderCheckedOutItems(),
         renderContainers(),
         populateContainerSelect()
     ]);
 
-    // Auto-sync to file if enabled
-    if (fileSync.syncEnabled) {
+    // Auto-sync to file if enabled (local only)
+    if (!useFirebase && fileSync.syncEnabled) {
         await fileSync.syncNow();
         updateSyncStatus();
     }
@@ -318,24 +514,48 @@ function updateSyncStatus() {
 // ==================== ITEMS ====================
 
 async function renderItems() {
-    const items = await db.getAllItems();
-    const containers = await db.getAllContainers();
+    const items = await activeDB.getAllItems();
+    const containers = await activeDB.getAllContainers();
     const containerMap = {};
     containers.forEach(c => containerMap[c.id] = c);
 
-    elements.itemsList.innerHTML = '';
-    elements.noItems.classList.toggle('hidden', items.length > 0);
+    // Filter to only stored items (not checked out)
+    const storedItems = items.filter(item => item.status !== 'checked_out');
 
-    items.forEach(item => {
+    elements.itemsList.innerHTML = '';
+    elements.noItems.classList.toggle('hidden', storedItems.length > 0);
+
+    storedItems.forEach(item => {
         const container = containerMap[item.containerId];
         const card = createItemCard(item, container);
         elements.itemsList.appendChild(card);
     });
 }
 
-function createItemCard(item, container) {
+async function renderCheckedOutItems() {
+    const items = await activeDB.getAllItems();
+    const checkedOutItems = items.filter(item => item.status === 'checked_out');
+
+    elements.checkedOutList.innerHTML = '';
+    elements.noCheckedOut.classList.toggle('hidden', checkedOutItems.length > 0);
+
+    // Update badge
+    if (checkedOutItems.length > 0) {
+        elements.checkedOutBadge.textContent = checkedOutItems.length;
+        elements.checkedOutBadge.classList.remove('hidden');
+    } else {
+        elements.checkedOutBadge.classList.add('hidden');
+    }
+
+    checkedOutItems.forEach(item => {
+        const card = createItemCard(item, null, true);
+        elements.checkedOutList.appendChild(card);
+    });
+}
+
+function createItemCard(item, container, isCheckedOut = false) {
     const card = document.createElement('div');
-    card.className = 'item-card';
+    card.className = 'item-card' + (isCheckedOut ? ' checked-out' : '');
     card.onclick = () => viewItem(item.id);
 
     const imageDiv = document.createElement('div');
@@ -360,7 +580,15 @@ function createItemCard(item, container) {
 
     const locationDiv = document.createElement('div');
     locationDiv.className = 'item-card-location';
-    locationDiv.textContent = container ? `${container.name} • ${container.location}` : 'No container';
+
+    if (isCheckedOut) {
+        locationDiv.textContent = 'Checked Out';
+        if (item.checkedOutNote) {
+            locationDiv.textContent += `: ${item.checkedOutNote}`;
+        }
+    } else {
+        locationDiv.textContent = container ? `${container.name} • ${container.location}` : 'No container';
+    }
 
     contentDiv.appendChild(nameDiv);
     contentDiv.appendChild(locationDiv);
@@ -372,11 +600,12 @@ function createItemCard(item, container) {
 }
 
 async function viewItem(id) {
-    const item = await db.getItem(id);
+    const item = await activeDB.getItem(id);
     if (!item) return;
 
     currentItemId = id;
-    const container = item.containerId ? await db.getContainer(item.containerId) : null;
+    const isCheckedOut = item.status === 'checked_out';
+    const container = item.containerId ? await activeDB.getContainer(item.containerId) : null;
 
     elements.viewItemTitle.textContent = item.name;
 
@@ -384,6 +613,19 @@ async function viewItem(id) {
 
     if (item.photo) {
         html += `<img src="${item.photo}" alt="${item.name}" class="view-item-image">`;
+    }
+
+    // Show checked out status if applicable
+    if (isCheckedOut) {
+        html += `
+            <div class="checked-out-info">
+                <div class="status-label">⚠️ Checked Out</div>
+                <div class="status-details">
+                    Since: ${formatDate(item.checkedOutDate)}
+                    ${item.checkedOutNote ? `<br>Note: ${escapeHtml(item.checkedOutNote)}` : ''}
+                </div>
+            </div>
+        `;
     }
 
     if (item.description) {
@@ -406,6 +648,16 @@ async function viewItem(id) {
                 <div class="detail-value">${escapeHtml(container.location)}</div>
             </div>
         `;
+    } else if (isCheckedOut && item.previousContainerId) {
+        const prevContainer = await activeDB.getContainer(item.previousContainerId);
+        if (prevContainer) {
+            html += `
+                <div class="detail-row">
+                    <div class="detail-label">Previous Container</div>
+                    <div class="detail-value">${escapeHtml(prevContainer.name)} (${escapeHtml(prevContainer.location)})</div>
+                </div>
+            `;
+        }
     }
 
     html += `
@@ -416,6 +668,16 @@ async function viewItem(id) {
     `;
 
     elements.viewItemContent.innerHTML = html;
+
+    // Show appropriate action buttons
+    if (isCheckedOut) {
+        elements.viewItemActions.classList.add('hidden');
+        elements.viewItemCheckedOutActions.classList.remove('hidden');
+    } else {
+        elements.viewItemActions.classList.remove('hidden');
+        elements.viewItemCheckedOutActions.classList.add('hidden');
+    }
+
     elements.viewItemModal.classList.remove('hidden');
 }
 
@@ -429,7 +691,7 @@ async function openItemModal(id = null) {
     await populateContainerSelect();
 
     if (id) {
-        const item = await db.getItem(id);
+        const item = await activeDB.getItem(id);
         if (!item) return;
 
         elements.itemModalTitle.textContent = 'Edit Item';
@@ -471,10 +733,10 @@ async function handleItemSubmit(e) {
 
     try {
         if (id) {
-            await db.updateItem(id, data);
+            await activeDB.updateItem(id, data);
             showToast('Item updated!', 'success');
         } else {
-            await db.addItem(data);
+            await activeDB.addItem(data);
             showToast('Item added!', 'success');
         }
 
@@ -502,8 +764,83 @@ async function handleItemSubmit(e) {
 
 async function deleteItem(id) {
     try {
-        await db.deleteItem(id);
+        await activeDB.deleteItem(id);
         showToast('Item deleted', 'success');
+        await refreshData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// ==================== CHECK IN/OUT ====================
+
+function openCheckOutModal() {
+    elements.checkOutNote.value = '';
+    elements.checkOutModal.classList.remove('hidden');
+}
+
+async function openCheckInModal() {
+    await populateCheckInContainerSelect();
+
+    // Get the item to see if there's a previous container
+    const item = await activeDB.getItem(currentItemId);
+    if (item && item.previousContainerId) {
+        const prevContainer = await activeDB.getContainer(item.previousContainerId);
+        if (prevContainer) {
+            elements.previousContainerNote.classList.remove('hidden');
+            elements.previousContainerName.textContent = `${prevContainer.name} (${prevContainer.location})`;
+            elements.checkInContainer.value = item.previousContainerId;
+        } else {
+            elements.previousContainerNote.classList.add('hidden');
+        }
+    } else {
+        elements.previousContainerNote.classList.add('hidden');
+    }
+
+    elements.checkInModal.classList.remove('hidden');
+}
+
+async function populateCheckInContainerSelect() {
+    const containers = await activeDB.getAllContainers();
+    elements.checkInContainer.innerHTML = '<option value="">Select a container...</option>';
+
+    containers.forEach(container => {
+        const option = document.createElement('option');
+        option.value = container.id;
+        option.textContent = `${container.name} (${container.location})`;
+        elements.checkInContainer.appendChild(option);
+    });
+}
+
+async function handleCheckOut(e) {
+    e.preventDefault();
+
+    const note = elements.checkOutNote.value.trim();
+
+    try {
+        await activeDB.checkOutItem(currentItemId, note);
+        showToast('Item checked out!', 'success');
+        elements.checkOutModal.classList.add('hidden');
+        await refreshData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function handleCheckIn(e) {
+    e.preventDefault();
+
+    const containerId = elements.checkInContainer.value;
+
+    if (!containerId) {
+        showToast('Please select a container', 'error');
+        return;
+    }
+
+    try {
+        await activeDB.checkInItem(currentItemId, containerId);
+        showToast('Item checked in!', 'success');
+        elements.checkInModal.classList.add('hidden');
         await refreshData();
     } catch (error) {
         showToast(error.message, 'error');
@@ -513,12 +850,12 @@ async function deleteItem(id) {
 // ==================== CONTAINERS ====================
 
 async function renderContainers() {
-    const containers = await db.getAllContainers();
-    const items = await db.getAllItems();
+    const containers = await activeDB.getAllContainers();
+    const items = await activeDB.getAllItems();
 
-    // Count items per container
+    // Count items per container (only stored items, not checked out)
     const itemCounts = {};
-    items.forEach(item => {
+    items.filter(item => item.status !== 'checked_out').forEach(item => {
         itemCounts[item.containerId] = (itemCounts[item.containerId] || 0) + 1;
     });
 
@@ -561,11 +898,13 @@ function createContainerCard(container, itemCount) {
 }
 
 async function viewContainer(id) {
-    const container = await db.getContainer(id);
+    const container = await activeDB.getContainer(id);
     if (!container) return;
 
     currentContainerId = id;
-    const items = await db.getItemsByContainer(id);
+    const items = await activeDB.getItemsByContainer(id);
+    // Only show stored items in container
+    const storedItems = items.filter(item => item.status !== 'checked_out');
 
     const typeLabels = {
         bin: 'Plastic Bin',
@@ -606,11 +945,11 @@ async function viewContainer(id) {
         `;
     }
 
-    if (items.length > 0) {
+    if (storedItems.length > 0) {
         html += `
             <div class="container-items-list">
-                <h4>Items in this container (${items.length})</h4>
-                ${items.map(item => `
+                <h4>Items in this container (${storedItems.length})</h4>
+                ${storedItems.map(item => `
                     <div class="container-item" onclick="viewItemFromContainer('${item.id}')">
                         <div class="container-item-thumb">
                             ${item.photo ? `<img src="${item.photo}" alt="${escapeHtml(item.name)}">` : '📦'}
@@ -634,7 +973,7 @@ window.viewItemFromContainer = async function(itemId) {
 
 async function openContainerModal(id = null) {
     if (id) {
-        const container = await db.getContainer(id);
+        const container = await activeDB.getContainer(id);
         if (!container) return;
 
         elements.containerModalTitle.textContent = 'Edit Container';
@@ -677,10 +1016,10 @@ async function handleContainerSubmit(e) {
 
     try {
         if (id) {
-            await db.updateContainer(id, data);
+            await activeDB.updateContainer(id, data);
             showToast('Container updated!', 'success');
         } else {
-            await db.addContainer(data);
+            await activeDB.addContainer(data);
             showToast('Container added!', 'success');
         }
 
@@ -693,7 +1032,7 @@ async function handleContainerSubmit(e) {
 
 async function deleteContainer(id) {
     try {
-        await db.deleteContainer(id);
+        await activeDB.deleteContainer(id);
         showToast('Container deleted', 'success');
         elements.viewContainerModal.classList.add('hidden');
         await refreshData();
@@ -703,7 +1042,7 @@ async function deleteContainer(id) {
 }
 
 async function populateContainerSelect() {
-    const containers = await db.getAllContainers();
+    const containers = await activeDB.getAllContainers();
     elements.itemContainer.innerHTML = '<option value="">Select a container...</option>';
 
     containers.forEach(container => {
@@ -851,13 +1190,13 @@ async function handleSearch() {
     }
 
     searchTimeout = setTimeout(async () => {
-        const results = await db.search(query);
+        const results = await activeDB.search(query);
         renderSearchResults(results);
     }, 200);
 }
 
 async function renderSearchResults(results) {
-    const containers = await db.getAllContainers();
+    const containers = await activeDB.getAllContainers();
     const containerMap = {};
     containers.forEach(c => containerMap[c.id] = c);
 
@@ -891,7 +1230,8 @@ async function renderSearchResults(results) {
     // Render matched items
     results.items.forEach(item => {
         const container = containerMap[item.containerId];
-        const card = createItemCard(item, container);
+        const isCheckedOut = item.status === 'checked_out';
+        const card = createItemCard(item, container, isCheckedOut);
         elements.searchResults.appendChild(card);
     });
 }
@@ -900,7 +1240,12 @@ async function renderSearchResults(results) {
 
 async function exportData() {
     try {
-        const data = await db.exportFullBackup();
+        let data;
+        if (useFirebase) {
+            data = await activeDB.exportData();
+        } else {
+            data = await activeDB.exportFullBackup();
+        }
         const json = JSON.stringify(data, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -931,7 +1276,7 @@ async function handleImport(e) {
     try {
         const text = await file.text();
         const data = JSON.parse(text);
-        const result = await db.importData(data);
+        const result = await activeDB.importData(data);
 
         showToast(`Imported ${result.containersImported} containers and ${result.itemsImported} items!`, 'success');
         await refreshData();

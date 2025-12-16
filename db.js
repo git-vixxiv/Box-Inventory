@@ -187,6 +187,10 @@ class InventoryDB {
             description: item.description || '',
             containerId: item.containerId,
             photo: item.photo || null, // Base64 encoded image
+            status: 'stored', // 'stored' or 'checked_out'
+            checkedOutDate: null,
+            checkedOutNote: null,
+            previousContainerId: null,
             dateAdded: new Date().toISOString(),
             dateModified: new Date().toISOString()
         };
@@ -293,6 +297,88 @@ class InventoryDB {
             request.onsuccess = () => resolve(true);
             request.onerror = () => reject(request.error);
         });
+    }
+
+    // ==================== CHECK IN/OUT OPERATIONS ====================
+
+    /**
+     * Check out an item (remove from container temporarily)
+     */
+    async checkOutItem(id, note = '') {
+        await this.ensureReady();
+        const item = await this.getItem(id);
+        if (!item) {
+            throw new Error('Item not found');
+        }
+        if (item.status === 'checked_out') {
+            throw new Error('Item is already checked out');
+        }
+
+        const data = {
+            ...item,
+            status: 'checked_out',
+            checkedOutDate: new Date().toISOString(),
+            checkedOutNote: note,
+            previousContainerId: item.containerId,
+            containerId: null,
+            dateModified: new Date().toISOString()
+        };
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['items'], 'readwrite');
+            const store = transaction.objectStore('items');
+            const request = store.put(data);
+
+            request.onsuccess = () => resolve(data);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * Check in an item (return to a container)
+     */
+    async checkInItem(id, containerId = null, note = '') {
+        await this.ensureReady();
+        const item = await this.getItem(id);
+        if (!item) {
+            throw new Error('Item not found');
+        }
+        if (item.status !== 'checked_out') {
+            throw new Error('Item is not checked out');
+        }
+
+        // Use provided container, or previous container, or throw error
+        const targetContainer = containerId || item.previousContainerId;
+        if (!targetContainer) {
+            throw new Error('No container specified for check-in');
+        }
+
+        const data = {
+            ...item,
+            status: 'stored',
+            containerId: targetContainer,
+            checkedOutDate: null,
+            checkedOutNote: null,
+            previousContainerId: null,
+            dateModified: new Date().toISOString()
+        };
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['items'], 'readwrite');
+            const store = transaction.objectStore('items');
+            const request = store.put(data);
+
+            request.onsuccess = () => resolve(data);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * Get all checked out items
+     */
+    async getCheckedOutItems() {
+        const allItems = await this.getAllItems();
+        return allItems.filter(item => item.status === 'checked_out');
     }
 
     // ==================== SEARCH ====================
@@ -605,10 +691,11 @@ InventoryDB.prototype.exportForMCP = async function() {
     // Create MCP-optimized export
     return {
         lastUpdated: new Date().toISOString(),
-        version: '1.0',
+        version: '2.0',
         stats: {
             totalItems: items.length,
-            totalContainers: containers.length
+            totalContainers: containers.length,
+            checkedOutItems: items.filter(i => i.status === 'checked_out').length
         },
         containers: containers.map(c => ({
             id: c.id,
@@ -616,7 +703,7 @@ InventoryDB.prototype.exportForMCP = async function() {
             type: c.type,
             location: c.location,
             description: c.description || '',
-            itemCount: items.filter(i => i.containerId === c.id).length
+            itemCount: items.filter(i => i.containerId === c.id && i.status !== 'checked_out').length
         })),
         items: items.map(item => {
             const container = containerMap[item.containerId];
@@ -624,21 +711,26 @@ InventoryDB.prototype.exportForMCP = async function() {
                 id: item.id,
                 name: item.name,
                 description: item.description || '',
+                status: item.status || 'stored',
                 containerName: container ? container.name : null,
                 containerType: container ? container.type : null,
                 location: container ? container.location : null,
-                fullLocation: container
-                    ? `${container.name} (${container.type}) - ${container.location}`
-                    : 'Unknown location',
+                fullLocation: item.status === 'checked_out'
+                    ? 'CHECKED OUT' + (item.checkedOutNote ? `: ${item.checkedOutNote}` : '')
+                    : (container ? `${container.name} (${container.type}) - ${container.location}` : 'Unknown location'),
                 hasPhoto: !!item.photo,
                 photoData: item.photo || null, // Include for MCP image viewing
                 dateAdded: item.dateAdded,
-                dateModified: item.dateModified
+                dateModified: item.dateModified,
+                checkedOutDate: item.checkedOutDate
             };
         }),
         // Plain text inventory for easy AI reading
         textInventory: items.map(item => {
             const container = containerMap[item.containerId];
+            if (item.status === 'checked_out') {
+                return `${item.name}${item.description ? ` - ${item.description}` : ''}: CHECKED OUT${item.checkedOutNote ? ` (${item.checkedOutNote})` : ''}`;
+            }
             const loc = container
                 ? `in "${container.name}" (${container.type}) at ${container.location}`
                 : 'location unknown';

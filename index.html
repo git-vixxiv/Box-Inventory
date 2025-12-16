@@ -13,6 +13,19 @@
 </head>
 <body>
     <div id="app">
+        <!-- Auth Bar (shown when Firebase is configured) -->
+        <div id="authBar" class="auth-bar hidden">
+            <div id="authLoading" class="auth-loading">Loading...</div>
+            <div id="authLoggedOut" class="auth-logged-out hidden">
+                <button id="signInBtn" class="auth-btn">Sign in with Google</button>
+            </div>
+            <div id="authLoggedIn" class="auth-logged-in hidden">
+                <img id="userAvatar" class="user-avatar" src="" alt="">
+                <span id="userName" class="user-name"></span>
+                <button id="signOutBtn" class="auth-btn-small">Sign out</button>
+            </div>
+        </div>
+
         <!-- Header -->
         <header class="header">
             <a href="#" id="logoLink" class="logo-link"><h1>Box Inventory</h1></a>
@@ -22,6 +35,7 @@
         <!-- Navigation Menu (hidden by default) -->
         <nav id="menu" class="menu hidden">
             <a href="#" data-view="items" class="menu-item active">Items</a>
+            <a href="#" data-view="checkedOut" class="menu-item">Checked Out <span id="checkedOutBadge" class="badge hidden">0</span></a>
             <a href="#" data-view="containers" class="menu-item">Containers</a>
             <a href="#" data-view="search" class="menu-item">Search</a>
             <hr>
@@ -40,6 +54,16 @@
 
         <!-- Main Content Views -->
         <main id="content">
+            <!-- Not Signed In View -->
+            <section id="notSignedInView" class="view hidden">
+                <div class="sign-in-prompt">
+                    <h2>Welcome to Box Inventory</h2>
+                    <p>Sign in to sync your inventory across all your devices.</p>
+                    <button id="signInPromptBtn" class="primary-btn large">Sign in with Google</button>
+                    <p class="sign-in-note">Your data will be securely stored in the cloud and accessible from any device.</p>
+                </div>
+            </section>
+
             <!-- Items View -->
             <section id="itemsView" class="view active">
                 <div class="view-header">
@@ -50,6 +74,17 @@
                     <!-- Items will be rendered here -->
                 </div>
                 <p id="noItems" class="empty-state hidden">No items yet. Add your first item!</p>
+            </section>
+
+            <!-- Checked Out View -->
+            <section id="checkedOutView" class="view hidden">
+                <div class="view-header">
+                    <h2>Checked Out Items</h2>
+                </div>
+                <div id="checkedOutList" class="items-grid">
+                    <!-- Checked out items will be rendered here -->
+                </div>
+                <p id="noCheckedOut" class="empty-state hidden">No items checked out.</p>
             </section>
 
             <!-- Containers View -->
@@ -201,9 +236,14 @@
                 <div id="viewItemContent" class="view-item-content">
                     <!-- Item details will be rendered here -->
                 </div>
-                <div class="form-actions">
+                <div id="viewItemActions" class="form-actions">
                     <button type="button" id="deleteItemBtn" class="secondary-btn danger">Delete</button>
+                    <button type="button" id="checkOutItemBtn" class="secondary-btn">Check Out</button>
                     <button type="button" id="editItemBtn" class="primary-btn">Edit</button>
+                </div>
+                <div id="viewItemCheckedOutActions" class="form-actions hidden">
+                    <button type="button" id="deleteItemBtn2" class="secondary-btn danger">Delete</button>
+                    <button type="button" id="checkInItemBtn" class="primary-btn">Check In</button>
                 </div>
             </div>
         </div>
@@ -225,11 +265,57 @@
             </div>
         </div>
 
+        <!-- Check Out Modal -->
+        <div id="checkOutModal" class="modal hidden">
+            <div class="modal-content modal-small">
+                <div class="modal-header">
+                    <h3>Check Out Item</h3>
+                    <button class="close-btn" data-close="checkOutModal">&times;</button>
+                </div>
+                <form id="checkOutForm">
+                    <div class="form-group">
+                        <label for="checkOutNote">Note (optional)</label>
+                        <input type="text" id="checkOutNote" placeholder="e.g., Using for weekend project">
+                    </div>
+                    <p class="form-help">The item will be marked as checked out and removed from its container.</p>
+                    <div class="form-actions">
+                        <button type="button" class="secondary-btn" data-close="checkOutModal">Cancel</button>
+                        <button type="submit" class="primary-btn">Check Out</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Check In Modal -->
+        <div id="checkInModal" class="modal hidden">
+            <div class="modal-content modal-small">
+                <div class="modal-header">
+                    <h3>Check In Item</h3>
+                    <button class="close-btn" data-close="checkInModal">&times;</button>
+                </div>
+                <form id="checkInForm">
+                    <div class="form-group">
+                        <label for="checkInContainer">Return to Container *</label>
+                        <select id="checkInContainer" required>
+                            <option value="">Select a container...</option>
+                        </select>
+                    </div>
+                    <p id="previousContainerNote" class="form-help hidden">Previously stored in: <span id="previousContainerName"></span></p>
+                    <div class="form-actions">
+                        <button type="button" class="secondary-btn" data-close="checkInModal">Cancel</button>
+                        <button type="submit" class="primary-btn">Check In</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- Toast notifications -->
         <div id="toast" class="toast hidden"></div>
     </div>
 
     <script src="db.js"></script>
-    <script src="app.js"></script>
+    <script type="module" src="firebase-config.js"></script>
+    <script type="module" src="firebase-db.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>
