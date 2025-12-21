@@ -22,12 +22,12 @@
  */
 
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyAYTuRroX_0vG_V3t7p-_Zc9Xx7KJtHu6o",
+    authDomain: "boxes-7f150.firebaseapp.com",
+    projectId: "boxes-7f150",
+    storageBucket: "boxes-7f150.firebasestorage.app",
+    messagingSenderId: "551340403590",
+    appId: "1:551340403590:web:da698942de5bde0e8e9a07"
 };
 
 // Check if Firebase is configured
