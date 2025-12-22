@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50">
+  <!-- Shelf with boxes -->
+  <g fill="none" stroke="#ffffff" stroke-width="2">
+    <!-- Shelf base -->
+    <rect x="5" y="35" width="45" height="3" fill="#ffffff" rx="1"/>
+    <!-- Shelf supports -->
+    <line x1="10" y1="38" x2="10" y2="45"/>
+    <line x1="45" y1="38" x2="45" y2="45"/>
+  </g>
+
+  <!-- Box 1 -->
+  <g>
+    <rect x="8" y="20" width="12" height="15" fill="#60a5fa" stroke="#ffffff" stroke-width="1" rx="1"/>
+    <text x="14" y="30" font-family="Arial, sans-serif" font-size="8" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+  </g>
+
+  <!-- Box 2 -->
+  <g>
+    <rect x="22" y="22" width="12" height="13" fill="#3b82f6" stroke="#ffffff" stroke-width="1" rx="1"/>
+    <text x="28" y="31" font-family="Arial, sans-serif" font-size="8" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+  </g>
+
+  <!-- Box 3 -->
+  <g>
+    <rect x="36" y="18" width="12" height="17" fill="#2563eb" stroke="#ffffff" stroke-width="1" rx="1"/>
+    <text x="42" y="29" font-family="Arial, sans-serif" font-size="8" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+  </g>
+
+  <!-- Boxes text -->
+  <text x="60" y="32" font-family="Arial, sans-serif" font-size="24" fill="#ffffff" font-weight="bold">Boxes</text>
+</svg>
