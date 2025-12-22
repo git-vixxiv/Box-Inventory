@@ -1,6 +1,6 @@
 {
-    "name": "Box Inventory",
-    "short_name": "Inventory",
+    "name": "Boxes",
+    "short_name": "Boxes",
     "description": "Track where you store your items - boxes, bins, drawers, and more",
     "start_url": "/",
     "display": "standalone",

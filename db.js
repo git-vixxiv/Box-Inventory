@@ -181,6 +181,7 @@ class InventoryDB {
      */
     async addItem(item) {
         await this.ensureReady();
+        const now = new Date().toISOString();
         const data = {
             id: this.generateId(),
             name: item.name,
@@ -191,9 +192,15 @@ class InventoryDB {
             checkedOutDate: null,
             checkedOutNote: null,
             previousContainerId: null,
-            dateAdded: new Date().toISOString(),
-            dateModified: new Date().toISOString()
+            lastSeen: now, // When item was last put in a box
+            dateAdded: now,
+            dateModified: now
         };
+
+        // Update the container's lastItemAdded date
+        if (item.containerId) {
+            await this.updateContainerLastItemAdded(item.containerId, now);
+        }
 
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(['items'], 'readwrite');
@@ -203,6 +210,16 @@ class InventoryDB {
             request.onsuccess = () => resolve(data);
             request.onerror = () => reject(request.error);
         });
+    }
+
+    /**
+     * Update container's lastItemAdded timestamp
+     */
+    async updateContainerLastItemAdded(containerId, timestamp) {
+        const container = await this.getContainer(containerId);
+        if (container) {
+            await this.updateContainer(containerId, { lastItemAdded: timestamp });
+        }
     }
 
     /**
@@ -353,6 +370,7 @@ class InventoryDB {
             throw new Error('No container specified for check-in');
         }
 
+        const now = new Date().toISOString();
         const data = {
             ...item,
             status: 'stored',
@@ -360,8 +378,12 @@ class InventoryDB {
             checkedOutDate: null,
             checkedOutNote: null,
             previousContainerId: null,
-            dateModified: new Date().toISOString()
+            lastSeen: now, // Update lastSeen when item is returned
+            dateModified: now
         };
+
+        // Update the container's lastItemAdded date
+        await this.updateContainerLastItemAdded(targetContainer, now);
 
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(['items'], 'readwrite');

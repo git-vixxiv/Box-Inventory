@@ -7,7 +7,7 @@ import { firebaseDB } from './firebase-db.js';
 import { isFirebaseConfigured } from './firebase-config.js';
 
 // ==================== GLOBAL STATE ====================
-let currentView = 'items';
+let currentView = 'home';
 let currentItemId = null;
 let currentContainerId = null;
 let currentPhotoData = null;
@@ -39,10 +39,28 @@ const elements = {
 
     // Views
     notSignedInView: document.getElementById('notSignedInView'),
+    homeView: document.getElementById('homeView'),
     itemsView: document.getElementById('itemsView'),
     checkedOutView: document.getElementById('checkedOutView'),
     containersView: document.getElementById('containersView'),
     searchView: document.getElementById('searchView'),
+
+    // Home elements
+    homeStats: document.getElementById('homeStats'),
+    storeInBoxBtn: document.getElementById('storeInBoxBtn'),
+    addNewBoxBtn: document.getElementById('addNewBoxBtn'),
+    whatsInBoxBtn: document.getElementById('whatsInBoxBtn'),
+    wheresMyBoxBtn: document.getElementById('wheresMyBoxBtn'),
+
+    // What's in the Box modal
+    whatsInBoxModal: document.getElementById('whatsInBoxModal'),
+    selectBoxToView: document.getElementById('selectBoxToView'),
+    boxContentsResult: document.getElementById('boxContentsResult'),
+
+    // Where's my Box modal
+    wheresMyBoxModal: document.getElementById('wheresMyBoxModal'),
+    findBoxInput: document.getElementById('findBoxInput'),
+    findBoxResults: document.getElementById('findBoxResults'),
 
     // Lists
     itemsList: document.getElementById('itemsList'),
@@ -177,9 +195,10 @@ function handleAuthStateChange(user) {
         elements.userAvatar.src = user.photoURL || '';
         elements.userName.textContent = user.displayName || user.email;
 
-        // Show main app views
+        // Show main app views - switch to home
         elements.notSignedInView.classList.add('hidden');
         elements.notSignedInView.classList.remove('active');
+        switchView('home');
 
         // Refresh data from Firebase
         refreshData();
@@ -202,6 +221,8 @@ function handleAuthStateChange(user) {
 
 function showSignInPrompt() {
     // Hide all views
+    elements.homeView.classList.add('hidden');
+    elements.homeView.classList.remove('active');
     elements.itemsView.classList.add('hidden');
     elements.itemsView.classList.remove('active');
     elements.containersView.classList.add('hidden');
@@ -231,14 +252,38 @@ function initEventListeners() {
     // Menu toggle
     elements.menuBtn.addEventListener('click', toggleMenu);
 
-    // Logo link - return to items view
+    // Logo link - return to home view
     const logoLink = document.getElementById('logoLink');
     if (logoLink) {
         logoLink.addEventListener('click', (e) => {
             e.preventDefault();
-            switchView('items');
+            switchView('home');
             elements.searchInput.value = '';
         });
+    }
+
+    // Home action buttons
+    if (elements.storeInBoxBtn) {
+        elements.storeInBoxBtn.addEventListener('click', () => openItemModal());
+    }
+    if (elements.addNewBoxBtn) {
+        elements.addNewBoxBtn.addEventListener('click', () => openContainerModal());
+    }
+    if (elements.whatsInBoxBtn) {
+        elements.whatsInBoxBtn.addEventListener('click', () => openWhatsInBoxModal());
+    }
+    if (elements.wheresMyBoxBtn) {
+        elements.wheresMyBoxBtn.addEventListener('click', () => openWheresMyBoxModal());
+    }
+
+    // What's in the Box modal - select change
+    if (elements.selectBoxToView) {
+        elements.selectBoxToView.addEventListener('change', handleBoxSelection);
+    }
+
+    // Where's my Box modal - search input
+    if (elements.findBoxInput) {
+        elements.findBoxInput.addEventListener('input', handleFindBoxSearch);
     }
 
     // Click outside menu to close
@@ -445,15 +490,22 @@ function switchView(view) {
     elements.notSignedInView.classList.add('hidden');
     elements.notSignedInView.classList.remove('active');
 
+    elements.homeView.classList.toggle('active', view === 'home');
     elements.itemsView.classList.toggle('active', view === 'items');
     elements.checkedOutView.classList.toggle('active', view === 'checkedOut');
     elements.containersView.classList.toggle('active', view === 'containers');
     elements.searchView.classList.toggle('active', view === 'search');
 
+    elements.homeView.classList.toggle('hidden', view !== 'home');
     elements.itemsView.classList.toggle('hidden', view !== 'items');
     elements.checkedOutView.classList.toggle('hidden', view !== 'checkedOut');
     elements.containersView.classList.toggle('hidden', view !== 'containers');
     elements.searchView.classList.toggle('hidden', view !== 'search');
+
+    // Render home stats when switching to home
+    if (view === 'home') {
+        renderHomeStats();
+    }
 }
 
 // ==================== DATA REFRESH ====================
@@ -1317,6 +1369,192 @@ function showToast(message, type = '') {
         elements.toast.classList.add('hidden');
     }, 3000);
 }
+
+// ==================== HOME VIEW ====================
+
+async function renderHomeStats() {
+    const [items, containers] = await Promise.all([
+        activeDB.getAllItems(),
+        activeDB.getAllContainers()
+    ]);
+
+    const storedItems = items.filter(item => item.status !== 'checked_out');
+    const checkedOutItems = items.filter(item => item.status === 'checked_out');
+
+    elements.homeStats.innerHTML = `
+        <h3>Your Inventory</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-value">${storedItems.length}</div>
+                <div class="stat-label">Items Stored</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">${containers.length}</div>
+                <div class="stat-label">Boxes</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">${checkedOutItems.length}</div>
+                <div class="stat-label">Checked Out</div>
+            </div>
+        </div>
+    `;
+}
+
+// ==================== WHAT'S IN THE BOX ====================
+
+async function openWhatsInBoxModal() {
+    // Populate the box selector
+    const containers = await activeDB.getAllContainers();
+    elements.selectBoxToView.innerHTML = '<option value="">Choose a box...</option>';
+
+    containers.forEach(container => {
+        const option = document.createElement('option');
+        option.value = container.id;
+        option.textContent = `${container.name} (${container.location})`;
+        elements.selectBoxToView.appendChild(option);
+    });
+
+    elements.boxContentsResult.classList.add('hidden');
+    elements.boxContentsResult.innerHTML = '';
+    elements.whatsInBoxModal.classList.remove('hidden');
+}
+
+async function handleBoxSelection() {
+    const containerId = elements.selectBoxToView.value;
+
+    if (!containerId) {
+        elements.boxContentsResult.classList.add('hidden');
+        return;
+    }
+
+    const container = await activeDB.getContainer(containerId);
+    const items = await activeDB.getItemsByContainer(containerId);
+    const storedItems = items.filter(item => item.status !== 'checked_out');
+
+    let html = `
+        <h4>${escapeHtml(container.name)}</h4>
+        <div class="box-location">📍 ${escapeHtml(container.location)}</div>
+    `;
+
+    if (container.lastItemAdded) {
+        html += `<div class="box-last-updated">Last updated: ${formatDate(container.lastItemAdded)}</div>`;
+    }
+
+    if (storedItems.length === 0) {
+        html += '<div class="empty-box-message">This box is empty</div>';
+    } else {
+        html += '<ul class="contents-list">';
+        storedItems.forEach(item => {
+            html += `
+                <li onclick="viewItemFromWhatsInBox('${item.id}')">
+                    <div class="contents-item-thumb">
+                        ${item.photo ? `<img src="${item.photo}" alt="">` : '📦'}
+                    </div>
+                    <div class="contents-item-info">
+                        <div class="contents-item-name">${escapeHtml(item.name)}</div>
+                        ${item.lastSeen ? `<div class="contents-item-date">Stored: ${formatDate(item.lastSeen)}</div>` : ''}
+                    </div>
+                </li>
+            `;
+        });
+        html += '</ul>';
+    }
+
+    elements.boxContentsResult.innerHTML = html;
+    elements.boxContentsResult.classList.remove('hidden');
+}
+
+// Global function for onclick handler
+window.viewItemFromWhatsInBox = async function(itemId) {
+    elements.whatsInBoxModal.classList.add('hidden');
+    await viewItem(itemId);
+};
+
+// ==================== WHERE'S MY BOX ====================
+
+let findBoxTimeout = null;
+
+async function openWheresMyBoxModal() {
+    elements.findBoxInput.value = '';
+    elements.findBoxResults.innerHTML = '<div class="no-results-message">Type to search for an item or box...</div>';
+    elements.wheresMyBoxModal.classList.remove('hidden');
+    elements.findBoxInput.focus();
+}
+
+async function handleFindBoxSearch() {
+    const query = elements.findBoxInput.value.trim();
+
+    clearTimeout(findBoxTimeout);
+
+    if (!query) {
+        elements.findBoxResults.innerHTML = '<div class="no-results-message">Type to search for an item or box...</div>';
+        return;
+    }
+
+    findBoxTimeout = setTimeout(async () => {
+        const results = await activeDB.search(query);
+        renderFindBoxResults(results);
+    }, 200);
+}
+
+async function renderFindBoxResults(results) {
+    const containers = await activeDB.getAllContainers();
+    const containerMap = {};
+    containers.forEach(c => containerMap[c.id] = c);
+
+    const totalResults = results.items.length + results.containers.length;
+
+    if (totalResults === 0) {
+        elements.findBoxResults.innerHTML = '<div class="no-results-message">No results found</div>';
+        return;
+    }
+
+    let html = '';
+
+    // Show containers first
+    results.containers.forEach(container => {
+        html += `
+            <div class="find-result-item" onclick="viewContainerFromFind('${container.id}')">
+                <span class="find-result-type box">BOX</span>
+                <div class="find-result-name">${escapeHtml(container.name)}</div>
+                <div class="find-result-location">📍 ${escapeHtml(container.location)}</div>
+            </div>
+        `;
+    });
+
+    // Show items
+    results.items.forEach(item => {
+        const container = containerMap[item.containerId];
+        const isCheckedOut = item.status === 'checked_out';
+
+        html += `
+            <div class="find-result-item" onclick="viewItemFromFind('${item.id}')">
+                <span class="find-result-type item">${isCheckedOut ? 'CHECKED OUT' : 'ITEM'}</span>
+                <div class="find-result-name">${escapeHtml(item.name)}</div>
+                ${isCheckedOut
+                    ? `<div class="find-result-location">⚠️ Currently checked out</div>`
+                    : container
+                        ? `<div class="find-result-location">📦 ${escapeHtml(container.name)}</div>
+                           <div class="find-result-sublocation">📍 ${escapeHtml(container.location)}</div>`
+                        : '<div class="find-result-location">Location unknown</div>'
+                }
+            </div>
+        `;
+    });
+
+    elements.findBoxResults.innerHTML = html;
+}
+
+// Global functions for onclick handlers
+window.viewContainerFromFind = async function(containerId) {
+    elements.wheresMyBoxModal.classList.add('hidden');
+    await viewContainer(containerId);
+};
+
+window.viewItemFromFind = async function(itemId) {
+    elements.wheresMyBoxModal.classList.add('hidden');
+    await viewItem(itemId);
+};
 
 // ==================== SERVICE WORKER REGISTRATION ====================
 

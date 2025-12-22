@@ -212,6 +212,7 @@ class FirebaseDB {
         if (!this.user) throw new Error('Not authenticated');
 
         const id = this.generateId();
+        const now = new Date().toISOString();
         const data = {
             id,
             name: item.name,
@@ -222,12 +223,19 @@ class FirebaseDB {
             checkedOutDate: null,
             checkedOutNote: null,
             previousContainerId: null,
-            dateAdded: new Date().toISOString(),
-            dateModified: new Date().toISOString()
+            lastSeen: now, // When item was last put in a box
+            dateAdded: now,
+            dateModified: now
         };
 
         const docRef = doc(this.db, this.getUserPath('items'), id);
         await setDoc(docRef, data);
+
+        // Update the container's lastItemAdded date
+        if (item.containerId) {
+            await this.updateContainer(item.containerId, { lastItemAdded: now });
+        }
+
         return data;
     }
 
@@ -325,6 +333,7 @@ class FirebaseDB {
         const targetContainer = containerId || item.previousContainerId;
         if (!targetContainer) throw new Error('No container specified');
 
+        const now = new Date().toISOString();
         const data = {
             ...item,
             status: 'stored',
@@ -332,11 +341,16 @@ class FirebaseDB {
             checkedOutDate: null,
             checkedOutNote: null,
             previousContainerId: null,
-            dateModified: new Date().toISOString()
+            lastSeen: now, // Update lastSeen when item is returned
+            dateModified: now
         };
 
         const docRef = doc(this.db, this.getUserPath('items'), id);
         await setDoc(docRef, data);
+
+        // Update the container's lastItemAdded date
+        await this.updateContainer(targetContainer, { lastItemAdded: now });
+
         return data;
     }
 

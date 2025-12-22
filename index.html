@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#2563eb">
     <meta name="description" content="Track where you store your items - boxes, bins, drawers, and more">
-    <title>Box Inventory</title>
+    <title>Boxes</title>
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icons/icon.svg">
     <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
@@ -28,16 +28,16 @@
 
         <!-- Header -->
         <header class="header">
-            <a href="#" id="logoLink" class="logo-link"><h1>Box Inventory</h1></a>
+            <a href="#" id="logoLink" class="logo-link"><h1>Boxes</h1></a>
             <button id="menuBtn" class="icon-btn" aria-label="Menu">☰</button>
         </header>
 
         <!-- Navigation Menu (hidden by default) -->
         <nav id="menu" class="menu hidden">
-            <a href="#" data-view="items" class="menu-item active">Items</a>
+            <a href="#" data-view="home" class="menu-item active">Home</a>
+            <a href="#" data-view="items" class="menu-item">All Items</a>
             <a href="#" data-view="checkedOut" class="menu-item">Checked Out <span id="checkedOutBadge" class="badge hidden">0</span></a>
-            <a href="#" data-view="containers" class="menu-item">Containers</a>
-            <a href="#" data-view="search" class="menu-item">Search</a>
+            <a href="#" data-view="containers" class="menu-item">All Boxes</a>
             <hr>
             <a href="#" id="syncBtn" class="menu-item">Enable Claude Sync</a>
             <span id="syncStatus" class="sync-status hidden"></span>
@@ -49,7 +49,7 @@
 
         <!-- Search Bar (always visible) -->
         <div class="search-bar">
-            <input type="text" id="searchInput" placeholder="Search items or containers...">
+            <input type="text" id="searchInput" placeholder="Search items or boxes...">
         </div>
 
         <!-- Main Content Views -->
@@ -57,17 +57,46 @@
             <!-- Not Signed In View -->
             <section id="notSignedInView" class="view hidden">
                 <div class="sign-in-prompt">
-                    <h2>Welcome to Box Inventory</h2>
+                    <h2>Welcome to Boxes</h2>
                     <p>Sign in to sync your inventory across all your devices.</p>
                     <button id="signInPromptBtn" class="primary-btn large">Sign in with Google</button>
                     <p class="sign-in-note">Your data will be securely stored in the cloud and accessible from any device.</p>
                 </div>
             </section>
 
+            <!-- Home View (shown after login) -->
+            <section id="homeView" class="view active">
+                <div class="home-actions">
+                    <button id="storeInBoxBtn" class="action-card">
+                        <span class="action-icon">📦</span>
+                        <span class="action-title">Store in a Box</span>
+                        <span class="action-desc">Add an item to a box</span>
+                    </button>
+                    <button id="addNewBoxBtn" class="action-card">
+                        <span class="action-icon">➕</span>
+                        <span class="action-title">Add a New Box</span>
+                        <span class="action-desc">Create a new container</span>
+                    </button>
+                    <button id="whatsInBoxBtn" class="action-card">
+                        <span class="action-icon">🔍</span>
+                        <span class="action-title">What's in the Box?</span>
+                        <span class="action-desc">View contents of a box</span>
+                    </button>
+                    <button id="wheresMyBoxBtn" class="action-card">
+                        <span class="action-icon">📍</span>
+                        <span class="action-title">Where's my Box?</span>
+                        <span class="action-desc">Find an item or box</span>
+                    </button>
+                </div>
+                <div id="homeStats" class="home-stats">
+                    <!-- Stats will be rendered here -->
+                </div>
+            </section>
+
             <!-- Items View -->
-            <section id="itemsView" class="view active">
+            <section id="itemsView" class="view hidden">
                 <div class="view-header">
-                    <h2>My Items</h2>
+                    <h2>All Items</h2>
                     <button id="addItemBtn" class="primary-btn">+ Add Item</button>
                 </div>
                 <div id="itemsList" class="items-grid">
@@ -90,13 +119,13 @@
             <!-- Containers View -->
             <section id="containersView" class="view hidden">
                 <div class="view-header">
-                    <h2>My Containers</h2>
-                    <button id="addContainerBtn" class="primary-btn">+ Add Container</button>
+                    <h2>All Boxes</h2>
+                    <button id="addContainerBtn" class="primary-btn">+ Add Box</button>
                 </div>
                 <div id="containersList" class="containers-list">
                     <!-- Containers will be rendered here -->
                 </div>
-                <p id="noContainers" class="empty-state hidden">No containers yet. Add a box, bin, or drawer!</p>
+                <p id="noContainers" class="empty-state hidden">No boxes yet. Add a box, bin, or drawer!</p>
             </section>
 
             <!-- Search Results View -->
@@ -306,6 +335,42 @@
                         <button type="submit" class="primary-btn">Check In</button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- What's in the Box Modal -->
+        <div id="whatsInBoxModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>What's in the Box?</h3>
+                    <button class="close-btn" data-close="whatsInBoxModal">&times;</button>
+                </div>
+                <div class="form-group">
+                    <label for="selectBoxToView">Select a Box</label>
+                    <select id="selectBoxToView">
+                        <option value="">Choose a box...</option>
+                    </select>
+                </div>
+                <div id="boxContentsResult" class="box-contents-result hidden">
+                    <!-- Box contents will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Where's my Box Modal -->
+        <div id="wheresMyBoxModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Where's my Box?</h3>
+                    <button class="close-btn" data-close="wheresMyBoxModal">&times;</button>
+                </div>
+                <div class="form-group">
+                    <label for="findBoxInput">Search for an item or box</label>
+                    <input type="text" id="findBoxInput" placeholder="Type to search...">
+                </div>
+                <div id="findBoxResults" class="find-box-results">
+                    <!-- Search results will be rendered here -->
+                </div>
             </div>
         </div>
 
