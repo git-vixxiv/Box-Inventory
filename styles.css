@@ -53,7 +53,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    height: 60px;
+    height: 100px;
     padding: 0.25rem 1rem;
     background: #f4f4f4;
     color: var(--gray-700);
@@ -66,7 +66,7 @@ body {
 }
 
 .header-logo {
-    height: 52px;
+    height: 94px;
     width: auto;
 }
 
@@ -97,13 +97,13 @@ body {
 /* Menu */
 .menu {
     position: fixed;
-    top: 60px; /* Height of header */
+    top: 100px; /* Height of header */
     right: 0;
     background: var(--white);
     box-shadow: var(--shadow-lg);
     border-radius: 0 0 var(--radius) var(--radius);
     min-width: 200px;
-    max-height: calc(100vh - 60px);
+    max-height: calc(100vh - 100px);
     overflow-y: auto;
     z-index: 99;
 }
