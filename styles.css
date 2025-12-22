@@ -51,9 +51,9 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background: var(--primary);
-    color: var(--white);
+    padding: 0.5rem 1rem;
+    background: #f4f4f4;
+    color: var(--gray-700);
     box-shadow: var(--shadow);
 }
 
@@ -63,7 +63,7 @@ body {
 }
 
 .header-logo {
-    height: 36px;
+    height: 44px;
     width: auto;
 }
 
@@ -79,7 +79,7 @@ body {
 .icon-btn {
     background: transparent;
     border: none;
-    color: var(--white);
+    color: var(--gray-700);
     font-size: 1.5rem;
     cursor: pointer;
     padding: 0.25rem;
@@ -88,19 +88,19 @@ body {
 }
 
 .icon-btn:hover {
-    background: rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.1);
 }
 
 /* Menu */
 .menu {
     position: fixed;
-    top: 56px; /* Height of header */
+    top: 60px; /* Height of header */
     right: 0;
     background: var(--white);
     box-shadow: var(--shadow-lg);
     border-radius: 0 0 var(--radius) var(--radius);
     min-width: 200px;
-    max-height: calc(100vh - 56px);
+    max-height: calc(100vh - 60px);
     overflow-y: auto;
     z-index: 99;
 }
