@@ -1099,6 +1099,55 @@ body {
     padding: 2rem 1rem;
 }
 
+/* Name Suggestions */
+.name-suggestion-container {
+    margin-top: 0.5rem;
+}
+
+.name-suggestion-container.hidden {
+    display: none;
+}
+
+.name-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.suggestion-label {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+}
+
+.suggestion-name {
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 0.875rem;
+}
+
+.suggestion-use-btn {
+    background: var(--primary);
+    color: var(--white);
+    border: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    margin-left: auto;
+    transition: background 0.2s;
+}
+
+.suggestion-use-btn:hover {
+    background: var(--primary-dark);
+}
+
 /* Responsive adjustments for home */
 @media (min-width: 640px) {
     .home-actions {

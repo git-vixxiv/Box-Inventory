@@ -361,6 +361,9 @@ function initEventListeners() {
     elements.containerPhotoInput.addEventListener('change', handleContainerPhotoCapture);
     elements.containerPhotoFileInput.addEventListener('change', handleContainerPhotoCapture);
 
+    // Container type change - update naming suggestion
+    elements.containerType.addEventListener('change', updateContainerNameSuggestion);
+
     // Save & Add Another button
     const saveAndAddAnotherBtn = document.getElementById('saveAndAddAnotherBtn');
     if (saveAndAddAnotherBtn) {
@@ -742,6 +745,9 @@ window.viewContainerFromItem = async function(containerId) {
 async function openItemModal(id = null) {
     await populateContainerSelect();
 
+    // Clear any existing suggestions
+    clearItemNameSuggestion();
+
     if (id) {
         const item = await activeDB.getItem(id);
         if (!item) return;
@@ -765,10 +771,59 @@ async function openItemModal(id = null) {
         elements.itemForm.reset();
         elements.itemId.value = '';
         resetPhotoPreview();
+
+        // Show item name suggestions
+        await updateItemNameSuggestion();
     }
 
     elements.itemModal.classList.remove('hidden');
     elements.itemName.focus();
+}
+
+/**
+ * Update item name suggestion
+ */
+async function updateItemNameSuggestion() {
+    const suggestionContainer = document.getElementById('itemNameSuggestion');
+
+    if (!suggestionContainer) {
+        return;
+    }
+
+    // Don't show suggestions when editing
+    if (elements.itemId.value) {
+        clearItemNameSuggestion();
+        return;
+    }
+
+    const suggestions = await getItemNameSuggestions();
+
+    if (suggestions.length > 0) {
+        // Show top suggestions (up to 3)
+        suggestionContainer.innerHTML = '';
+        const topSuggestions = suggestions.slice(0, 3);
+
+        topSuggestions.forEach(suggestion => {
+            const suggestionEl = renderNameSuggestion(suggestion, (name) => {
+                elements.itemName.value = name;
+                elements.itemName.focus();
+                clearItemNameSuggestion();
+            });
+            suggestionContainer.appendChild(suggestionEl);
+        });
+
+        suggestionContainer.classList.remove('hidden');
+    } else {
+        clearItemNameSuggestion();
+    }
+}
+
+function clearItemNameSuggestion() {
+    const suggestionContainer = document.getElementById('itemNameSuggestion');
+    if (suggestionContainer) {
+        suggestionContainer.innerHTML = '';
+        suggestionContainer.classList.add('hidden');
+    }
 }
 
 async function handleItemSubmit(e) {
@@ -1024,6 +1079,9 @@ window.viewItemFromContainer = async function(itemId) {
 };
 
 async function openContainerModal(id = null) {
+    // Clear any existing suggestions
+    clearContainerNameSuggestion();
+
     if (id) {
         const container = await activeDB.getContainer(id);
         if (!container) return;
@@ -1048,10 +1106,58 @@ async function openContainerModal(id = null) {
         elements.containerForm.reset();
         elements.containerId.value = '';
         resetContainerPhotoPreview();
+
+        // Show suggestion if a type is pre-selected
+        if (elements.containerType.value) {
+            await updateContainerNameSuggestion();
+        }
     }
 
     elements.containerModal.classList.remove('hidden');
     elements.containerName.focus();
+}
+
+/**
+ * Update container name suggestion based on selected type
+ */
+async function updateContainerNameSuggestion() {
+    const containerType = elements.containerType.value;
+    const suggestionContainer = document.getElementById('containerNameSuggestion');
+
+    if (!containerType || !suggestionContainer) {
+        clearContainerNameSuggestion();
+        return;
+    }
+
+    // Don't show suggestions when editing
+    if (elements.containerId.value) {
+        clearContainerNameSuggestion();
+        return;
+    }
+
+    const suggestions = await getContainerNameSuggestions(containerType);
+
+    if (suggestions.length > 0) {
+        const topSuggestion = suggestions[0];
+        suggestionContainer.innerHTML = '';
+        const suggestionEl = renderNameSuggestion(topSuggestion, (name) => {
+            elements.containerName.value = name;
+            elements.containerName.focus();
+            clearContainerNameSuggestion();
+        });
+        suggestionContainer.appendChild(suggestionEl);
+        suggestionContainer.classList.remove('hidden');
+    } else {
+        clearContainerNameSuggestion();
+    }
+}
+
+function clearContainerNameSuggestion() {
+    const suggestionContainer = document.getElementById('containerNameSuggestion');
+    if (suggestionContainer) {
+        suggestionContainer.innerHTML = '';
+        suggestionContainer.classList.add('hidden');
+    }
 }
 
 async function handleContainerSubmit(e) {
@@ -1368,6 +1474,120 @@ function showToast(message, type = '') {
     setTimeout(() => {
         elements.toast.classList.add('hidden');
     }, 3000);
+}
+
+// ==================== NAMING SUGGESTIONS ====================
+
+/**
+ * Analyzes existing names to find patterns and suggest the next name
+ * Supports patterns like: "Name #1", "Name 1", "Name-1", "Name #01"
+ */
+function analyzeNamingPatterns(names) {
+    const patterns = {};
+
+    // Regex to match common numbering patterns at the end of names
+    const numberPatterns = [
+        /^(.+?)\s*#(\d+)$/,      // "Name #1" or "Name#1"
+        /^(.+?)\s*-\s*(\d+)$/,   // "Name - 1" or "Name-1"
+        /^(.+?)\s+(\d+)$/,       // "Name 1"
+    ];
+
+    names.forEach(name => {
+        for (const regex of numberPatterns) {
+            const match = name.match(regex);
+            if (match) {
+                const baseName = match[1].trim();
+                const number = parseInt(match[2], 10);
+                const format = name.replace(match[1], '{base}').replace(match[2], '{num}');
+
+                if (!patterns[baseName]) {
+                    patterns[baseName] = {
+                        baseName,
+                        numbers: [],
+                        format: format,
+                        originalFormat: name.substring(match[1].length, name.length - match[2].length)
+                    };
+                }
+                patterns[baseName].numbers.push(number);
+                break;
+            }
+        }
+    });
+
+    // Calculate suggestions for each pattern
+    const suggestions = [];
+    for (const key in patterns) {
+        const pattern = patterns[key];
+        const maxNumber = Math.max(...pattern.numbers);
+        const nextNumber = maxNumber + 1;
+
+        // Determine the separator used
+        let separator = ' #';
+        if (pattern.originalFormat.includes('-')) {
+            separator = pattern.originalFormat.includes(' - ') ? ' - ' : '-';
+        } else if (pattern.originalFormat.includes('#')) {
+            separator = pattern.originalFormat.includes(' #') ? ' #' : '#';
+        } else {
+            separator = ' ';
+        }
+
+        const suggestedName = `${pattern.baseName}${separator}${nextNumber}`;
+        suggestions.push({
+            baseName: pattern.baseName,
+            suggestedName,
+            count: pattern.numbers.length,
+            nextNumber
+        });
+    }
+
+    // Sort by count (most used patterns first)
+    suggestions.sort((a, b) => b.count - a.count);
+
+    return suggestions;
+}
+
+/**
+ * Get container name suggestions based on type
+ */
+async function getContainerNameSuggestions(containerType) {
+    const containers = await activeDB.getAllContainers();
+
+    // Filter containers by the selected type
+    const sameTypeContainers = containers.filter(c => c.type === containerType);
+    const names = sameTypeContainers.map(c => c.name);
+
+    return analyzeNamingPatterns(names);
+}
+
+/**
+ * Get item name suggestions
+ */
+async function getItemNameSuggestions() {
+    const items = await activeDB.getAllItems();
+    const names = items.map(i => i.name);
+
+    return analyzeNamingPatterns(names);
+}
+
+/**
+ * Render suggestion UI
+ */
+function renderNameSuggestion(suggestion, onUseName) {
+    if (!suggestion) return '';
+
+    const div = document.createElement('div');
+    div.className = 'name-suggestion';
+    div.innerHTML = `
+        <span class="suggestion-label">Suggested name:</span>
+        <span class="suggestion-name">${escapeHtml(suggestion.suggestedName)}</span>
+        <button type="button" class="suggestion-use-btn">Use Name</button>
+    `;
+
+    div.querySelector('.suggestion-use-btn').addEventListener('click', () => {
+        onUseName(suggestion.suggestedName);
+    });
+
+    return div;
 }
 
 // ==================== HOME VIEW ====================
