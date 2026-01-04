@@ -940,6 +940,21 @@ body {
     padding: 0.5rem;
 }
 
+.stat-item.stat-link {
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: background 0.2s, transform 0.2s;
+}
+
+.stat-item.stat-link:hover {
+    background: var(--gray-100);
+    transform: translateY(-2px);
+}
+
+.stat-item.stat-link:active {
+    transform: translateY(0);
+}
+
 .stat-value {
     font-size: 1.5rem;
     font-weight: 700;

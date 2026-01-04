@@ -1604,15 +1604,15 @@ async function renderHomeStats() {
     elements.homeStats.innerHTML = `
         <h3>Your Inventory</h3>
         <div class="stats-grid">
-            <div class="stat-item">
+            <div class="stat-item stat-link" onclick="window.navigateToView('items')">
                 <div class="stat-value">${storedItems.length}</div>
                 <div class="stat-label">Items Stored</div>
             </div>
-            <div class="stat-item">
+            <div class="stat-item stat-link" onclick="window.navigateToView('containers')">
                 <div class="stat-value">${containers.length}</div>
                 <div class="stat-label">Boxes</div>
             </div>
-            <div class="stat-item">
+            <div class="stat-item stat-link" onclick="window.navigateToView('checkedOut')">
                 <div class="stat-value">${checkedOutItems.length}</div>
                 <div class="stat-label">Checked Out</div>
             </div>
@@ -1774,6 +1774,11 @@ window.viewContainerFromFind = async function(containerId) {
 window.viewItemFromFind = async function(itemId) {
     elements.wheresMyBoxModal.classList.add('hidden');
     await viewItem(itemId);
+};
+
+// Global function for stats navigation
+window.navigateToView = function(view) {
+    switchView(view);
 };
 
 // ==================== SERVICE WORKER REGISTRATION ====================
