@@ -386,6 +386,46 @@ class FirebaseDB {
             this.getAllContainers()
         ]);
 
+        // Strip photos to keep export small and AI/spreadsheet-friendly
+        const containersClean = containers.map(c => {
+            const { photo, ...rest } = c;
+            return { ...rest, hasPhoto: !!photo };
+        });
+
+        const itemsClean = items.map(i => {
+            const { photo, ...rest } = i;
+            return { ...rest, hasPhoto: !!photo };
+        });
+
+        const containerMap = {};
+        containers.forEach(c => { containerMap[c.id] = c; });
+
+        return {
+            exportDate: new Date().toISOString(),
+            version: '2.1',
+            type: 'data_only',
+            summary: {
+                totalItems: items.length,
+                totalContainers: containers.length
+            },
+            containers: containersClean,
+            items: itemsClean,
+            inventoryListing: items.map(item => {
+                const container = containerMap[item.containerId];
+                const locationStr = container
+                    ? `in "${container.name}" (${container.type}) at ${container.location}`
+                    : 'location unknown';
+                return `- ${item.name}${item.description ? ': ' + item.description : ''} - ${locationStr}`;
+            }).join('\n')
+        };
+    }
+
+    async exportFullBackup() {
+        const [items, containers] = await Promise.all([
+            this.getAllItems(),
+            this.getAllContainers()
+        ]);
+
         return {
             exportDate: new Date().toISOString(),
             version: '2.0',

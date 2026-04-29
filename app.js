@@ -1398,28 +1398,99 @@ async function renderSearchResults(results) {
 
 async function exportData() {
     try {
-        let data;
-        if (useFirebase) {
-            data = await activeDB.exportData();
-        } else {
-            data = await activeDB.exportFullBackup();
-        }
+        // Always use exportData (photo-stripped) for export to keep file size manageable
+        const data = await activeDB.exportData();
         const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
 
+        if (!json || json === 'null' || json === '{}') {
+            throw new Error('No data to export');
+        }
+
+        const filename = `box-inventory-${formatDateForFile(new Date())}.json`;
+        const blob = new Blob([json], { type: 'application/json' });
+
+        // Detect mobile for fallback handling
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        // Try the standard download approach first
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `box-inventory-${formatDateForFile(new Date())}.json`;
+        a.download = filename;
+        a.style.display = 'none';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
 
-        showToast('Data exported!', 'success');
+        // On mobile, also offer the data in a viewable form as a fallback
+        if (isMobile) {
+            // Give the standard download a moment to trigger
+            setTimeout(() => {
+                showExportFallback(json, filename);
+            }, 500);
+        }
+
+        // Clean up after a delay so the download has time to start
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+        showToast(`Exported ${data.summary?.totalItems || 0} items, ${data.summary?.totalContainers || 0} containers`, 'success');
     } catch (error) {
+        console.error('Export error:', error);
         showToast('Export failed: ' + error.message, 'error');
     }
+}
+
+function showExportFallback(json, filename) {
+    // Create a modal showing the data so users can copy it on mobile
+    let fallbackModal = document.getElementById('exportFallbackModal');
+    if (!fallbackModal) {
+        fallbackModal = document.createElement('div');
+        fallbackModal.id = 'exportFallbackModal';
+        fallbackModal.className = 'modal hidden';
+        fallbackModal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Export Data</h3>
+                    <button class="close-btn" data-close-fallback>&times;</button>
+                </div>
+                <div style="padding: 1rem;">
+                    <p style="margin-bottom: 0.75rem; font-size: 0.875rem; color: var(--gray-600);">
+                        If the download didn't start, copy the text below and save it as <strong id="exportFallbackFilename"></strong>.
+                    </p>
+                    <textarea id="exportFallbackData" readonly style="width: 100%; height: 200px; padding: 0.5rem; font-family: monospace; font-size: 0.75rem; border: 1px solid var(--gray-300); border-radius: var(--radius);"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="secondary-btn" data-close-fallback>Close</button>
+                    <button type="button" id="copyExportBtn" class="primary-btn">Copy to Clipboard</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(fallbackModal);
+
+        // Hook up close buttons
+        fallbackModal.querySelectorAll('[data-close-fallback]').forEach(btn => {
+            btn.addEventListener('click', () => fallbackModal.classList.add('hidden'));
+        });
+        fallbackModal.addEventListener('click', (e) => {
+            if (e.target === fallbackModal) fallbackModal.classList.add('hidden');
+        });
+
+        document.getElementById('copyExportBtn').addEventListener('click', async () => {
+            const textarea = document.getElementById('exportFallbackData');
+            try {
+                await navigator.clipboard.writeText(textarea.value);
+                showToast('Copied to clipboard!', 'success');
+            } catch (err) {
+                textarea.select();
+                document.execCommand('copy');
+                showToast('Copied!', 'success');
+            }
+        });
+    }
+
+    document.getElementById('exportFallbackFilename').textContent = filename;
+    document.getElementById('exportFallbackData').value = json;
+    fallbackModal.classList.remove('hidden');
 }
 
 async function handleImport(e) {
