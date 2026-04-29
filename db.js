@@ -611,6 +611,7 @@ class FileSync {
         this.fileHandle = null;
         this.syncEnabled = false;
         this.lastSyncTime = null;
+        this.dataGetter = null; // Optional override for data source
     }
 
     /**
@@ -618,6 +619,13 @@ class FileSync {
      */
     isSupported() {
         return 'showSaveFilePicker' in window;
+    }
+
+    /**
+     * Set a custom data getter (for using Firebase data instead of local)
+     */
+    setDataGetter(fn) {
+        this.dataGetter = fn;
     }
 
     /**
@@ -656,7 +664,9 @@ class FileSync {
         }
 
         try {
-            const data = await this.db.exportForMCP();
+            const data = this.dataGetter
+                ? await this.dataGetter()
+                : await this.db.exportForMCP();
             const json = JSON.stringify(data, null, 2);
 
             const writable = await this.fileHandle.createWritable();

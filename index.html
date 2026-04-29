@@ -38,15 +38,18 @@
         <nav id="menu" class="menu hidden">
             <a href="#" data-view="home" class="menu-item active">Home</a>
             <a href="#" data-view="items" class="menu-item">All Items</a>
+            <a href="#" data-view="needsPhoto" class="menu-item">Items Needing Photos <span id="needsPhotoBadge" class="badge hidden">0</span></a>
             <a href="#" data-view="checkedOut" class="menu-item">Checked Out <span id="checkedOutBadge" class="badge hidden">0</span></a>
             <a href="#" data-view="containers" class="menu-item">All Boxes</a>
             <hr>
+            <a href="#" id="bulkImportBtn" class="menu-item">Bulk Import (CSV)</a>
             <a href="#" id="syncBtn" class="menu-item">Enable Claude Sync</a>
             <span id="syncStatus" class="sync-status hidden"></span>
             <hr>
             <a href="#" id="exportBtn" class="menu-item">Export Data (JSON)</a>
             <a href="#" id="importBtn" class="menu-item">Import Data</a>
             <input type="file" id="importFile" accept=".json" class="hidden">
+            <input type="file" id="bulkImportFile" accept=".csv,.tsv,.txt" class="hidden">
         </nav>
 
         <!-- Search Bar (always visible) -->
@@ -118,6 +121,18 @@
                 <p id="noCheckedOut" class="empty-state hidden">No items checked out.</p>
             </section>
 
+            <!-- Items Needing Photos View -->
+            <section id="needsPhotoView" class="view hidden">
+                <div class="view-header">
+                    <h2>Items Needing Photos</h2>
+                </div>
+                <p class="form-help">Tap an item to add a photo. Bulk-imported items appear here until photos are added.</p>
+                <div id="needsPhotoList" class="items-grid">
+                    <!-- Items without photos will be rendered here -->
+                </div>
+                <p id="noNeedsPhoto" class="empty-state hidden">All items have photos!</p>
+            </section>
+
             <!-- Containers View -->
             <section id="containersView" class="view hidden">
                 <div class="view-header">
@@ -154,13 +169,21 @@
 
                     <div class="form-group">
                         <label for="itemName">Item Name *</label>
-                        <input type="text" id="itemName" required placeholder="e.g., Red Hammer">
+                        <div class="voice-input-wrapper">
+                            <input type="text" id="itemName" required placeholder="e.g., Red Hammer">
+                            <button type="button" class="voice-input-btn" data-voice-target="itemName" title="Voice input">🎤</button>
+                        </div>
+                        <div id="itemNameVoiceHint" class="voice-hint hidden">Listening...</div>
                         <div id="itemNameSuggestion" class="name-suggestion-container hidden"></div>
                     </div>
 
                     <div class="form-group">
                         <label for="itemDescription">Description</label>
-                        <textarea id="itemDescription" rows="2" placeholder="e.g., 16oz claw hammer with red rubber grip"></textarea>
+                        <div class="voice-input-wrapper">
+                            <textarea id="itemDescription" rows="2" placeholder="e.g., 16oz claw hammer with red rubber grip"></textarea>
+                            <button type="button" class="voice-input-btn" data-voice-target="itemDescription" title="Voice input">🎤</button>
+                        </div>
+                        <div id="itemDescriptionVoiceHint" class="voice-hint hidden">Listening...</div>
                     </div>
 
                     <div class="form-group">
@@ -207,7 +230,11 @@
 
                     <div class="form-group">
                         <label for="containerName">Container Name *</label>
-                        <input type="text" id="containerName" required placeholder="e.g., Plastic Bin #4">
+                        <div class="voice-input-wrapper">
+                            <input type="text" id="containerName" required placeholder="e.g., Plastic Bin #4">
+                            <button type="button" class="voice-input-btn" data-voice-target="containerName" title="Voice input">🎤</button>
+                        </div>
+                        <div id="containerNameVoiceHint" class="voice-hint hidden">Listening...</div>
                         <div id="containerNameSuggestion" class="name-suggestion-container hidden"></div>
                     </div>
 
@@ -227,12 +254,20 @@
 
                     <div class="form-group">
                         <label for="containerLocation">Location *</label>
-                        <input type="text" id="containerLocation" required placeholder="e.g., Top shelf in garage">
+                        <div class="voice-input-wrapper">
+                            <input type="text" id="containerLocation" required placeholder="e.g., Top shelf in garage">
+                            <button type="button" class="voice-input-btn" data-voice-target="containerLocation" title="Voice input">🎤</button>
+                        </div>
+                        <div id="containerLocationVoiceHint" class="voice-hint hidden">Listening...</div>
                     </div>
 
                     <div class="form-group">
                         <label for="containerDescription">Description</label>
-                        <textarea id="containerDescription" rows="2" placeholder="e.g., Large clear bin with blue lid"></textarea>
+                        <div class="voice-input-wrapper">
+                            <textarea id="containerDescription" rows="2" placeholder="e.g., Large clear bin with blue lid"></textarea>
+                            <button type="button" class="voice-input-btn" data-voice-target="containerDescription" title="Voice input">🎤</button>
+                        </div>
+                        <div id="containerDescriptionVoiceHint" class="voice-hint hidden">Listening...</div>
                     </div>
 
                     <div class="form-group">
@@ -374,6 +409,58 @@
                 </div>
                 <div id="findBoxResults" class="find-box-results">
                     <!-- Search results will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Import Modal -->
+        <div id="bulkImportModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Bulk Import Items</h3>
+                    <button class="close-btn" data-close="bulkImportModal">&times;</button>
+                </div>
+                <div id="bulkImportStep1" class="bulk-step">
+                    <div style="padding: 1rem;">
+                        <p style="margin-bottom: 0.75rem;">Bulk import items from a CSV file (e.g., from Google Sheets or Excel).</p>
+                        <div class="bulk-instructions">
+                            <strong>Required column:</strong> <code>name</code><br>
+                            <strong>Optional columns:</strong> <code>description</code>, <code>container</code>, <code>containerType</code>, <code>containerLocation</code>
+                            <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--gray-600);">
+                                If a container name doesn't exist, it will be created using the <code>containerType</code> and <code>containerLocation</code> columns.
+                                You can add photos to imported items later.
+                            </p>
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <button type="button" id="downloadTemplateBtn" class="secondary-btn">📥 Download CSV Template</button>
+                            <a href="https://docs.google.com/spreadsheets/create" target="_blank" rel="noopener" class="secondary-btn" style="display: inline-block; text-decoration: none; margin-top: 0.5rem;">📊 Open New Google Sheet</a>
+                        </div>
+                        <div style="margin-top: 1.5rem;">
+                            <button type="button" id="chooseCSVBtn" class="primary-btn" style="width: 100%;">Choose CSV File</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="bulkImportStep2" class="bulk-step hidden">
+                    <div style="padding: 1rem;">
+                        <h4 style="margin-bottom: 0.5rem;">Preview Import</h4>
+                        <p id="bulkImportSummary" style="font-size: 0.875rem; color: var(--gray-600); margin-bottom: 0.75rem;"></p>
+                        <div id="bulkImportPreview" class="bulk-preview"></div>
+                        <div id="bulkImportErrors" class="bulk-errors hidden"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="bulkImportBackBtn" class="secondary-btn">Back</button>
+                        <button type="button" id="bulkImportConfirmBtn" class="primary-btn">Import All</button>
+                    </div>
+                </div>
+
+                <div id="bulkImportStep3" class="bulk-step hidden">
+                    <div style="padding: 2rem 1rem; text-align: center;">
+                        <div id="bulkImportProgress" style="font-size: 1.125rem; margin-bottom: 1rem;">Importing...</div>
+                        <div class="bulk-progress-bar">
+                            <div id="bulkProgressFill" class="bulk-progress-fill"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

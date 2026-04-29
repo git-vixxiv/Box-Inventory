@@ -42,6 +42,7 @@ const elements = {
     homeView: document.getElementById('homeView'),
     itemsView: document.getElementById('itemsView'),
     checkedOutView: document.getElementById('checkedOutView'),
+    needsPhotoView: document.getElementById('needsPhotoView'),
     containersView: document.getElementById('containersView'),
     searchView: document.getElementById('searchView'),
 
@@ -65,17 +66,20 @@ const elements = {
     // Lists
     itemsList: document.getElementById('itemsList'),
     checkedOutList: document.getElementById('checkedOutList'),
+    needsPhotoList: document.getElementById('needsPhotoList'),
     containersList: document.getElementById('containersList'),
     searchResults: document.getElementById('searchResults'),
 
     // Empty states
     noItems: document.getElementById('noItems'),
     noCheckedOut: document.getElementById('noCheckedOut'),
+    noNeedsPhoto: document.getElementById('noNeedsPhoto'),
     noContainers: document.getElementById('noContainers'),
     noResults: document.getElementById('noResults'),
 
     // Badge
     checkedOutBadge: document.getElementById('checkedOutBadge'),
+    needsPhotoBadge: document.getElementById('needsPhotoBadge'),
 
     // Buttons
     addItemBtn: document.getElementById('addItemBtn'),
@@ -179,6 +183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     initEventListeners();
+    initVoiceInput();
     await refreshData();
 });
 
@@ -321,6 +326,39 @@ function initEventListeners() {
 
     elements.importFile.addEventListener('change', handleImport);
 
+    // Bulk Import (CSV)
+    const bulkImportBtn = document.getElementById('bulkImportBtn');
+    const bulkImportFile = document.getElementById('bulkImportFile');
+    if (bulkImportBtn) {
+        bulkImportBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            elements.menu.classList.add('hidden');
+            openBulkImportModal();
+        });
+    }
+    const downloadTemplateBtn = document.getElementById('downloadTemplateBtn');
+    if (downloadTemplateBtn) {
+        downloadTemplateBtn.addEventListener('click', downloadCSVTemplate);
+    }
+    const chooseCSVBtn = document.getElementById('chooseCSVBtn');
+    if (chooseCSVBtn) {
+        chooseCSVBtn.addEventListener('click', () => bulkImportFile.click());
+    }
+    if (bulkImportFile) {
+        bulkImportFile.addEventListener('change', handleBulkImportFile);
+    }
+    const bulkImportBackBtn = document.getElementById('bulkImportBackBtn');
+    if (bulkImportBackBtn) {
+        bulkImportBackBtn.addEventListener('click', () => {
+            document.getElementById('bulkImportStep1').classList.remove('hidden');
+            document.getElementById('bulkImportStep2').classList.add('hidden');
+        });
+    }
+    const bulkImportConfirmBtn = document.getElementById('bulkImportConfirmBtn');
+    if (bulkImportConfirmBtn) {
+        bulkImportConfirmBtn.addEventListener('click', executeBulkImport);
+    }
+
     // Claude Sync
     const syncBtn = document.getElementById('syncBtn');
     if (syncBtn) {
@@ -376,6 +414,7 @@ function initEventListeners() {
     // Modal close buttons
     document.querySelectorAll('[data-close]').forEach(btn => {
         btn.addEventListener('click', () => {
+            stopVoiceInput();
             const modalId = btn.dataset.close;
             document.getElementById(modalId).classList.add('hidden');
         });
@@ -443,10 +482,21 @@ function initEventListeners() {
     document.querySelectorAll('.modal').forEach(modal => {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
+                stopVoiceInput();
                 modal.classList.add('hidden');
             }
         });
     });
+
+    // Manual sync button (if added)
+    const syncNowBtn = document.getElementById('syncNowBtn');
+    if (syncNowBtn) {
+        syncNowBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            manualSyncNow();
+            elements.menu.classList.add('hidden');
+        });
+    }
 }
 
 // ==================== AUTHENTICATION ====================
@@ -496,12 +546,14 @@ function switchView(view) {
     elements.homeView.classList.toggle('active', view === 'home');
     elements.itemsView.classList.toggle('active', view === 'items');
     elements.checkedOutView.classList.toggle('active', view === 'checkedOut');
+    if (elements.needsPhotoView) elements.needsPhotoView.classList.toggle('active', view === 'needsPhoto');
     elements.containersView.classList.toggle('active', view === 'containers');
     elements.searchView.classList.toggle('active', view === 'search');
 
     elements.homeView.classList.toggle('hidden', view !== 'home');
     elements.itemsView.classList.toggle('hidden', view !== 'items');
     elements.checkedOutView.classList.toggle('hidden', view !== 'checkedOut');
+    if (elements.needsPhotoView) elements.needsPhotoView.classList.toggle('hidden', view !== 'needsPhoto');
     elements.containersView.classList.toggle('hidden', view !== 'containers');
     elements.searchView.classList.toggle('hidden', view !== 'search');
 
@@ -517,12 +569,13 @@ async function refreshData() {
     await Promise.all([
         renderItems(),
         renderCheckedOutItems(),
+        renderItemsNeedingPhotos(),
         renderContainers(),
         populateContainerSelect()
     ]);
 
-    // Auto-sync to file if enabled (local only)
-    if (!useFirebase && fileSync.syncEnabled) {
+    // Auto-sync to file if enabled (works with both local and Firebase)
+    if (fileSync.syncEnabled) {
         await fileSync.syncNow();
         updateSyncStatus();
     }
@@ -531,10 +584,18 @@ async function refreshData() {
 // ==================== FILE SYNC ====================
 
 async function enableClaudeSync() {
+    if (!fileSync.isSupported()) {
+        showToast('Claude Sync requires Chrome or Edge desktop browser', 'error');
+        return;
+    }
+
     try {
+        // Make fileSync use the active database
+        fileSync.setDataGetter(() => activeDB.exportForMCP());
+
         const success = await fileSync.enableSync();
         if (success) {
-            showToast('Claude sync enabled! File will update automatically.', 'success');
+            showToast('Claude sync enabled! File updates automatically.', 'success');
             updateSyncStatus();
         }
     } catch (error) {
@@ -548,17 +609,42 @@ function disableClaudeSync() {
     updateSyncStatus();
 }
 
+async function manualSyncNow() {
+    if (!fileSync.syncEnabled) {
+        showToast('Enable Claude Sync first', 'error');
+        return;
+    }
+    fileSync.setDataGetter(() => activeDB.exportForMCP());
+    const success = await fileSync.syncNow();
+    if (success) {
+        showToast('Synced to file!', 'success');
+    } else {
+        showToast('Sync failed - file permission may have been revoked', 'error');
+    }
+    updateSyncStatus();
+}
+
 function updateSyncStatus() {
     const status = fileSync.getStatus();
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
 
     if (syncBtn) {
-        syncBtn.textContent = status.enabled ? 'Disable Claude Sync' : 'Enable Claude Sync';
+        if (!status.supported) {
+            syncBtn.textContent = 'Claude Sync (Chrome/Edge only)';
+            syncBtn.style.color = 'var(--gray-400)';
+        } else {
+            syncBtn.textContent = status.enabled ? 'Disable Claude Sync' : 'Enable Claude Sync';
+            syncBtn.style.color = '';
+        }
     }
     if (syncStatus) {
         if (status.enabled && status.lastSync) {
-            syncStatus.textContent = `Last sync: ${status.lastSync.toLocaleTimeString()}`;
+            const timeStr = status.lastSync.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            syncStatus.textContent = `Last sync: ${timeStr} ✓`;
+            syncStatus.classList.remove('hidden');
+        } else if (status.enabled) {
+            syncStatus.textContent = 'Sync enabled';
             syncStatus.classList.remove('hidden');
         } else {
             syncStatus.classList.add('hidden');
@@ -605,6 +691,40 @@ async function renderCheckedOutItems() {
     checkedOutItems.forEach(item => {
         const card = createItemCard(item, null, true);
         elements.checkedOutList.appendChild(card);
+    });
+}
+
+async function renderItemsNeedingPhotos() {
+    if (!elements.needsPhotoList) return;
+
+    const items = await activeDB.getAllItems();
+    const containers = await activeDB.getAllContainers();
+    const containerMap = {};
+    containers.forEach(c => containerMap[c.id] = c);
+
+    const itemsWithoutPhoto = items.filter(item =>
+        !item.photo && item.status !== 'checked_out'
+    );
+
+    elements.needsPhotoList.innerHTML = '';
+    if (elements.noNeedsPhoto) {
+        elements.noNeedsPhoto.classList.toggle('hidden', itemsWithoutPhoto.length > 0);
+    }
+
+    // Update badge
+    if (elements.needsPhotoBadge) {
+        if (itemsWithoutPhoto.length > 0) {
+            elements.needsPhotoBadge.textContent = itemsWithoutPhoto.length;
+            elements.needsPhotoBadge.classList.remove('hidden');
+        } else {
+            elements.needsPhotoBadge.classList.add('hidden');
+        }
+    }
+
+    itemsWithoutPhoto.forEach(item => {
+        const container = containerMap[item.containerId];
+        const card = createItemCard(item, container);
+        elements.needsPhotoList.appendChild(card);
     });
 }
 
@@ -1514,6 +1634,494 @@ async function handleImport(e) {
     }
 
     e.target.value = '';
+}
+
+// ==================== VOICE INPUT ====================
+
+let activeVoiceRecognition = null;
+let activeVoiceTarget = null;
+
+function isVoiceInputSupported() {
+    return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+}
+
+function startVoiceInput(targetId, button) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Voice input not supported in this browser. Try Chrome, Edge, or Safari.', 'error');
+        return;
+    }
+
+    // Stop any existing recognition
+    stopVoiceInput();
+
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    const hint = document.getElementById(`${targetId}VoiceHint`);
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let baseValue = target.value;
+    if (baseValue && !baseValue.endsWith(' ')) baseValue += ' ';
+
+    recognition.onstart = () => {
+        button.classList.add('listening');
+        if (hint) {
+            hint.textContent = '🎤 Listening...';
+            hint.classList.remove('hidden');
+        }
+    };
+
+    recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        if (finalTranscript) {
+            baseValue += finalTranscript;
+            target.value = baseValue.trim();
+        } else if (interimTranscript) {
+            target.value = (baseValue + interimTranscript).trim();
+        }
+
+        // Trigger input event for any listeners (e.g. naming suggestions)
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    recognition.onerror = (event) => {
+        if (event.error === 'no-speech') {
+            // Common, not really an error
+        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            showToast('Microphone permission denied. Allow it in your browser settings.', 'error');
+        } else {
+            showToast(`Voice error: ${event.error}`, 'error');
+        }
+        stopVoiceInput();
+    };
+
+    recognition.onend = () => {
+        button.classList.remove('listening');
+        if (hint) hint.classList.add('hidden');
+        if (activeVoiceRecognition === recognition) {
+            activeVoiceRecognition = null;
+            activeVoiceTarget = null;
+        }
+    };
+
+    try {
+        recognition.start();
+        activeVoiceRecognition = recognition;
+        activeVoiceTarget = targetId;
+    } catch (err) {
+        showToast('Could not start voice input: ' + err.message, 'error');
+        button.classList.remove('listening');
+        if (hint) hint.classList.add('hidden');
+    }
+}
+
+function stopVoiceInput() {
+    if (activeVoiceRecognition) {
+        try {
+            activeVoiceRecognition.stop();
+        } catch (e) {
+            // Already stopped
+        }
+        activeVoiceRecognition = null;
+        activeVoiceTarget = null;
+    }
+    document.querySelectorAll('.voice-input-btn.listening').forEach(btn => {
+        btn.classList.remove('listening');
+    });
+    document.querySelectorAll('.voice-hint').forEach(h => h.classList.add('hidden'));
+}
+
+function initVoiceInput() {
+    if (!isVoiceInputSupported()) {
+        // Hide voice buttons if not supported
+        document.querySelectorAll('.voice-input-btn').forEach(btn => {
+            btn.style.display = 'none';
+        });
+        // Adjust input padding back to normal
+        document.querySelectorAll('.voice-input-wrapper input, .voice-input-wrapper textarea').forEach(el => {
+            el.style.paddingRight = '';
+        });
+        return;
+    }
+
+    document.querySelectorAll('.voice-input-btn').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = button.dataset.voiceTarget;
+
+            // If this button is already listening, stop
+            if (activeVoiceTarget === targetId) {
+                stopVoiceInput();
+                return;
+            }
+
+            startVoiceInput(targetId, button);
+        });
+    });
+}
+
+// ==================== BULK CSV IMPORT ====================
+
+let bulkImportData = null;
+
+function openBulkImportModal() {
+    document.getElementById('bulkImportStep1').classList.remove('hidden');
+    document.getElementById('bulkImportStep2').classList.add('hidden');
+    document.getElementById('bulkImportStep3').classList.add('hidden');
+    document.getElementById('bulkImportModal').classList.remove('hidden');
+    bulkImportData = null;
+}
+
+function downloadCSVTemplate() {
+    const csvContent = `name,description,container,containerType,containerLocation
+Red Hammer,16oz claw hammer with red grip,Toolbox 1,box,Garage
+Phillips Screwdriver Set,Set of 5 phillips screwdrivers,Toolbox 1,box,Garage
+Christmas Lights,Warm white LED string lights,Holiday Bin,bin,Attic
+`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'boxes-import-template.csv';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    showToast('Template downloaded', 'success');
+}
+
+/**
+ * Parse CSV text into array of objects.
+ * Supports comma or tab separators, quoted fields, escaped quotes.
+ */
+function parseCSV(text) {
+    // Strip BOM if present
+    if (text.charCodeAt(0) === 0xFEFF) {
+        text = text.slice(1);
+    }
+
+    const lines = [];
+    let currentLine = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                currentLine += '""';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+                currentLine += char;
+            }
+        } else if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (currentLine.length > 0) {
+                lines.push(currentLine);
+                currentLine = '';
+            }
+            // Skip \r\n
+            if (char === '\r' && next === '\n') i++;
+        } else {
+            currentLine += char;
+        }
+    }
+    if (currentLine.length > 0) lines.push(currentLine);
+
+    if (lines.length === 0) return { headers: [], rows: [] };
+
+    // Detect separator (tab or comma) on header line
+    const firstLine = lines[0];
+    const tabCount = (firstLine.match(/\t/g) || []).length;
+    const commaCount = (firstLine.match(/,/g) || []).length;
+    const sep = tabCount > commaCount ? '\t' : ',';
+
+    function parseLine(line) {
+        const fields = [];
+        let current = '';
+        let inQ = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            const n = line[i + 1];
+
+            if (c === '"') {
+                if (inQ && n === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQ = !inQ;
+                }
+            } else if (c === sep && !inQ) {
+                fields.push(current);
+                current = '';
+            } else {
+                current += c;
+            }
+        }
+        fields.push(current);
+        return fields.map(f => f.trim());
+    }
+
+    const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ''));
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+        const fields = parseLine(lines[i]);
+        if (fields.every(f => !f)) continue; // Skip empty lines
+        const row = {};
+        headers.forEach((h, idx) => {
+            row[h] = fields[idx] || '';
+        });
+        rows.push(row);
+    }
+
+    return { headers, rows };
+}
+
+async function handleBulkImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+        const text = await file.text();
+        const { headers, rows } = parseCSV(text);
+
+        if (!headers.includes('name')) {
+            showToast('CSV must have a "name" column', 'error');
+            e.target.value = '';
+            return;
+        }
+
+        if (rows.length === 0) {
+            showToast('CSV file is empty', 'error');
+            e.target.value = '';
+            return;
+        }
+
+        // Get existing containers for matching
+        const existingContainers = await activeDB.getAllContainers();
+        const containerByName = {};
+        existingContainers.forEach(c => {
+            containerByName[c.name.toLowerCase()] = c;
+        });
+
+        // Process rows: identify items and new containers
+        const itemsToImport = [];
+        const newContainersMap = new Map();
+        const errors = [];
+
+        rows.forEach((row, idx) => {
+            const lineNum = idx + 2; // +2 because 1-indexed and header row
+            const name = (row.name || '').trim();
+            if (!name) {
+                errors.push(`Line ${lineNum}: missing name`);
+                return;
+            }
+
+            const containerName = (row.container || '').trim();
+            const containerType = (row.containertype || row.type || 'box').trim().toLowerCase();
+            const containerLocation = (row.containerlocation || row.location || '').trim();
+
+            let containerId = null;
+            let containerInfo = null;
+
+            if (containerName) {
+                const existing = containerByName[containerName.toLowerCase()];
+                if (existing) {
+                    containerId = existing.id;
+                    containerInfo = existing;
+                } else {
+                    // Will need to create this container
+                    const key = containerName.toLowerCase();
+                    if (!newContainersMap.has(key)) {
+                        if (!containerLocation) {
+                            errors.push(`Line ${lineNum}: container "${containerName}" doesn't exist and no containerLocation given`);
+                            return;
+                        }
+                        newContainersMap.set(key, {
+                            name: containerName,
+                            type: containerType || 'box',
+                            location: containerLocation,
+                            description: ''
+                        });
+                    }
+                    containerInfo = { name: containerName, isNew: true };
+                }
+            }
+
+            itemsToImport.push({
+                name,
+                description: (row.description || '').trim(),
+                containerName: containerName || null,
+                containerId,
+                containerInfo
+            });
+        });
+
+        bulkImportData = {
+            items: itemsToImport,
+            newContainers: Array.from(newContainersMap.values()),
+            errors
+        };
+
+        renderBulkImportPreview();
+
+        document.getElementById('bulkImportStep1').classList.add('hidden');
+        document.getElementById('bulkImportStep2').classList.remove('hidden');
+    } catch (error) {
+        console.error(error);
+        showToast('Failed to parse CSV: ' + error.message, 'error');
+    }
+
+    e.target.value = '';
+}
+
+function renderBulkImportPreview() {
+    const data = bulkImportData;
+    if (!data) return;
+
+    const summary = document.getElementById('bulkImportSummary');
+    summary.textContent = `${data.items.length} item${data.items.length !== 1 ? 's' : ''} ready to import` +
+        (data.newContainers.length > 0 ? `, ${data.newContainers.length} new container${data.newContainers.length !== 1 ? 's' : ''} will be created` : '');
+
+    const preview = document.getElementById('bulkImportPreview');
+    preview.innerHTML = '';
+
+    // Show new containers first
+    data.newContainers.forEach(c => {
+        const row = document.createElement('div');
+        row.className = 'bulk-preview-row new-container';
+        row.innerHTML = `
+            <div class="preview-name">📦 ${escapeHtml(c.name)}<span class="new-tag">NEW BOX</span></div>
+            <div class="preview-detail">${escapeHtml(c.type)} at ${escapeHtml(c.location)}</div>
+        `;
+        preview.appendChild(row);
+    });
+
+    // Then show items
+    data.items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'bulk-preview-row';
+        const containerLabel = item.containerInfo
+            ? (item.containerInfo.isNew ? `→ ${item.containerName} (new)` : `→ ${item.containerInfo.name}`)
+            : '(no container)';
+        row.innerHTML = `
+            <div class="preview-name">${escapeHtml(item.name)}</div>
+            <div class="preview-detail">${escapeHtml(item.description || 'no description')} ${escapeHtml(containerLabel)}</div>
+        `;
+        preview.appendChild(row);
+    });
+
+    const errorsDiv = document.getElementById('bulkImportErrors');
+    if (data.errors.length > 0) {
+        errorsDiv.innerHTML = '<strong>Issues:</strong><ul style="margin-top: 0.25rem; margin-left: 1.25rem;">' +
+            data.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('') + '</ul>';
+        errorsDiv.classList.remove('hidden');
+    } else {
+        errorsDiv.classList.add('hidden');
+    }
+}
+
+async function executeBulkImport() {
+    const data = bulkImportData;
+    if (!data) return;
+
+    document.getElementById('bulkImportStep2').classList.add('hidden');
+    document.getElementById('bulkImportStep3').classList.remove('hidden');
+
+    const progressEl = document.getElementById('bulkImportProgress');
+    const progressFill = document.getElementById('bulkProgressFill');
+    progressFill.style.width = '0%';
+
+    const total = data.newContainers.length + data.items.length;
+    if (total === 0) {
+        document.getElementById('bulkImportModal').classList.add('hidden');
+        showToast('Nothing to import', 'error');
+        return;
+    }
+    let done = 0;
+    let containersCreated = 0;
+    let itemsCreated = 0;
+    const failures = [];
+
+    // Map of container name (lowercase) -> id (filled as we create)
+    const containerNameToId = {};
+    const existing = await activeDB.getAllContainers();
+    existing.forEach(c => { containerNameToId[c.name.toLowerCase()] = c.id; });
+
+    // Create new containers first
+    for (const c of data.newContainers) {
+        try {
+            progressEl.textContent = `Creating box: ${c.name}`;
+            const created = await activeDB.addContainer(c);
+            containerNameToId[c.name.toLowerCase()] = created.id;
+            containersCreated++;
+        } catch (err) {
+            failures.push(`Box "${c.name}": ${err.message}`);
+        }
+        done++;
+        progressFill.style.width = `${(done / total) * 100}%`;
+    }
+
+    // Create items
+    for (const item of data.items) {
+        try {
+            progressEl.textContent = `Adding: ${item.name}`;
+            const containerId = item.containerName
+                ? containerNameToId[item.containerName.toLowerCase()] || null
+                : null;
+            await activeDB.addItem({
+                name: item.name,
+                description: item.description,
+                containerId: containerId,
+                photo: null
+            });
+            itemsCreated++;
+        } catch (err) {
+            failures.push(`Item "${item.name}": ${err.message}`);
+        }
+        done++;
+        progressFill.style.width = `${(done / total) * 100}%`;
+    }
+
+    document.getElementById('bulkImportModal').classList.add('hidden');
+    bulkImportData = null;
+
+    let msg = `Imported ${itemsCreated} items`;
+    if (containersCreated > 0) msg += ` and created ${containersCreated} boxes`;
+    if (failures.length > 0) msg += ` (${failures.length} failed)`;
+    showToast(msg, failures.length > 0 ? 'error' : 'success');
+
+    if (failures.length > 0) {
+        console.error('Bulk import failures:', failures);
+    }
+
+    await refreshData();
+
+    // Switch to Items Needing Photos view to encourage photo addition
+    if (itemsCreated > 0) {
+        switchView('needsPhoto');
+    }
 }
 
 // ==================== UTILITIES ====================
