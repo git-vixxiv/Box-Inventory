@@ -1217,17 +1217,25 @@ body {
 
 .voice-input-btn {
     position: absolute;
-    right: 0.5rem;
+    right: 0.25rem;
     top: 50%;
     transform: translateY(-50%);
     background: transparent;
     border: none;
-    font-size: 1.25rem;
+    font-size: 1.5rem;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    padding: 0.5rem;
     border-radius: var(--radius);
     color: var(--gray-500);
     transition: background 0.2s, color 0.2s;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+    touch-action: manipulation;
+    z-index: 10;
 }
 
 .voice-input-btn:hover {
@@ -1247,7 +1255,7 @@ body {
 
 .voice-input-wrapper input,
 .voice-input-wrapper textarea {
-    padding-right: 2.5rem !important;
+    padding-right: 3rem !important;
 }
 
 .voice-hint {

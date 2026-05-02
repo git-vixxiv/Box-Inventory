@@ -1760,19 +1760,24 @@ function initVoiceInput() {
         return;
     }
 
-    document.querySelectorAll('.voice-input-btn').forEach(button => {
-        button.addEventListener('click', (e) => {
-            e.preventDefault();
-            const targetId = button.dataset.voiceTarget;
+    // Use event delegation for better mobile support
+    document.addEventListener('click', (e) => {
+        const button = e.target.closest('.voice-input-btn');
+        if (!button) return;
 
-            // If this button is already listening, stop
-            if (activeVoiceTarget === targetId) {
-                stopVoiceInput();
-                return;
-            }
+        e.preventDefault();
+        e.stopPropagation();
 
-            startVoiceInput(targetId, button);
-        });
+        const targetId = button.dataset.voiceTarget;
+        if (!targetId) return;
+
+        // If this button is already listening, stop
+        if (activeVoiceTarget === targetId) {
+            stopVoiceInput();
+            return;
+        }
+
+        startVoiceInput(targetId, button);
     });
 }
 
