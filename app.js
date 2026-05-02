@@ -1640,9 +1640,14 @@ async function handleImport(e) {
 
 let activeVoiceRecognition = null;
 let activeVoiceTarget = null;
+let userStoppedVoice = false;
 
 function isVoiceInputSupported() {
     return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+}
+
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
 function startVoiceInput(targetId, button) {
@@ -1654,14 +1659,18 @@ function startVoiceInput(targetId, button) {
 
     // Stop any existing recognition
     stopVoiceInput();
+    userStoppedVoice = false;
 
     const target = document.getElementById(targetId);
     if (!target) return;
 
     const hint = document.getElementById(`${targetId}VoiceHint`);
+    const isMobile = isMobileDevice();
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    // Mobile (especially Chrome Android) doesn't support continuous mode well;
+    // it cuts off after silence. We auto-restart in onend instead.
+    recognition.continuous = !isMobile;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
@@ -1671,7 +1680,7 @@ function startVoiceInput(targetId, button) {
     recognition.onstart = () => {
         button.classList.add('listening');
         if (hint) {
-            hint.textContent = '🎤 Listening...';
+            hint.textContent = '🎤 Listening... (tap mic again to stop)';
             hint.classList.remove('hidden');
         }
     };
@@ -1691,6 +1700,7 @@ function startVoiceInput(targetId, button) {
 
         if (finalTranscript) {
             baseValue += finalTranscript;
+            if (!baseValue.endsWith(' ')) baseValue += ' ';
             target.value = baseValue.trim();
         } else if (interimTranscript) {
             target.value = (baseValue + interimTranscript).trim();
@@ -1701,17 +1711,33 @@ function startVoiceInput(targetId, button) {
     };
 
     recognition.onerror = (event) => {
-        if (event.error === 'no-speech') {
-            // Common, not really an error
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            // Common, not really an error - let onend handle restart
+            return;
         } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
             showToast('Microphone permission denied. Allow it in your browser settings.', 'error');
+            userStoppedVoice = true;
+        } else if (event.error === 'network') {
+            showToast('Voice input requires internet connection.', 'error');
+            userStoppedVoice = true;
         } else {
             showToast(`Voice error: ${event.error}`, 'error');
+            userStoppedVoice = true;
         }
-        stopVoiceInput();
     };
 
     recognition.onend = () => {
+        // On mobile, auto-restart to simulate continuous mode
+        // unless the user explicitly stopped it
+        if (isMobile && !userStoppedVoice && activeVoiceRecognition === recognition) {
+            try {
+                recognition.start();
+                return;
+            } catch (e) {
+                // Failed to restart, fall through to cleanup
+            }
+        }
+
         button.classList.remove('listening');
         if (hint) hint.classList.add('hidden');
         if (activeVoiceRecognition === recognition) {
@@ -1732,6 +1758,7 @@ function startVoiceInput(targetId, button) {
 }
 
 function stopVoiceInput() {
+    userStoppedVoice = true;
     if (activeVoiceRecognition) {
         try {
             activeVoiceRecognition.stop();
